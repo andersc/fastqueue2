@@ -1,10 +1,10 @@
 ![Logo](fastqueue2.png)
 
-#FastQueue2
+# FastQueue2
 
 FastQueue2 is a rewrite of [FastQueue](https://github.com/andersc/fastqueue). 
 
-##Background
+## Background
 
 When I was playing around with benchmarking various SPSC queues deaod’s queue was unbeatable. The titans: Rigtorp, Folly, moodycamel and boost where all left in the dust, it was especially fast on Apple silicone. My previous attempt is placing itself in the top tier. I also implemented a stop-queue mechanism missing from the other implementations. Anyhow….
 
@@ -25,7 +25,7 @@ So the concept is exactly the same as before it’s just that we now know where 
 
 Using that mechanism we only need to share the actual object between the threads/cpus.
 
-##The need for speed
+## The need for speed
 
 * So what speed do we get on my M1 Pro?
 
@@ -88,11 +88,11 @@ if it's not then just return nullptr
 Regarding inline, noexcept and [[unlikely]].. It's there. Yes I know -O3 always inlines and I have read what people say about [[unlikely]].
 If you don't like it. remove and pullrequest.
 
-##Usage
+## Usage
 
 See the orignal fastqueue (the link above)
 
-##Some thoughts
+## Some thoughts
 There are a couple of findings that puzzled me. 
 1.	I had to increase the the spacing between the objects to two times the cache length for x86_64.
 2.	Pre-loading the cache when popping (I did comment out the code but play around yourself) did do nothing. I guess modern CPU’s pre-load the data speculatively anyway.
