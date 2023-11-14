@@ -4,6 +4,21 @@
 
 FastQueue2 is a rewrite of [FastQueue](https://github.com/andersc/fastqueue). 
 
+## But first
+
+* Is this queue memory efficient?
+
+	No. This queue aims for speed not memory efficiency.
+
+* The queue is ‘dramatically under-synchronized’
+
+	Write a test and prove it (you can use FastQueueIntegrityTest.cpp as a boilerplate). Don’t just say stuff out of the blue, prove it!
+
+* Why not use partial specialization for pointers since that's all you support?
+
+	This queue supports transport of 8 bytes from a producer to a consumer. It might be a pointer and it might not be a pointer so that’s why no specialization is implemented. However, if we gain speed using specialization of pointers then let’s implement that. I did not see any gain in my tests and this queue is all about speed.
+
+
 ## Background
 
 When I was playing around with benchmarking various SPSC queues deaod’s queue was unbeatable. The titans: Rigtorp, Folly, moodycamel and boost where all left in the dust, it was especially fast on Apple silicone. My previous attempt ([FastQueue](https://github.com/andersc/fastqueue)) trying to beat the titans is placing itself in the top tier but not #1. In my queue I also implemented a stop-queue mechanism missing from the other implementations. Anyhow….
@@ -94,8 +109,32 @@ If you don't like it. remove and pullrequest.
 
 See the orignal fastqueue (the link above)
 
+(just move the header file(s) to your project depending on arhitecture)
+**fast_queue_arm64.h** / **fast_queue_x86_64.h**
+
+## Build and run the tests
+
+```
+git clone https://github.com/andersc/fastqueue2.git
+cd fastqueue2 
+mkdir build
+cd build
+cmake -DCMAKE_BUILD_TYPE=Release ..
+cmake --build .
+```
+
+(Run the benchmark against Deaod)
+
+**./fast_queue2**
+
+(Run the integrity test)
+
+**./fast_queue_integrity_test**
+
+
 ## Some thoughts
 There are a couple of findings that puzzled me. 
+
 1.	I had to increase the the spacing between the objects to two times the cache length for x86_64 to gain speed over Deaod. Why? It does not make any sense.
 2.	Pre-loading the cache when popping (I did comment out the code but play around yourself in the ARM version) did do nothing. I guess modern CPU’s pre-load the data speculatively anyway.
 3.	I got good speed when the ringbuffer size exceeded 1024 entries. Why? My guess is that it irons out the uneven behaviour between the producer consumer. It’s just that my queue there was a significant increase in efficiency while for Deaod I did not see that effect. Well. We’re on the verge on CPU hacks and black magic so well. 
