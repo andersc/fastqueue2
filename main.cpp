@@ -10,7 +10,8 @@
 #error Architecture not supported
 #endif
 
-#include "deaod_spsc/spsc_queue.hpp"
+#include "spsc_queue.hpp" //Deaod
+#include "spsc-queue.hpp" //Dro
 #include "pin_thread.h"
 
 #define QUEUE_MASK 0b1111111111
@@ -30,6 +31,63 @@ class MyObject {
 public:
     uint64_t mIndex;
 };
+
+/// -----------------------------------------------------------
+///
+/// DroSPSC section Start
+///
+/// -----------------------------------------------------------
+
+
+void droSPSCProducer(dro::SPSCQueue<MyObject*> *pQueue, int32_t aCPU) {
+    if (!pinThread(aCPU)) {
+        std::cout << "Pin CPU fail. " << std::endl;
+        return;
+    }
+    while (!gStartBench) {
+#ifdef _MSC_VER
+        __nop();
+#else
+        asm volatile ("NOP");
+#endif
+    }
+    uint64_t lCounter = 0;
+    while (gActiveProducer) {
+        auto lTheObject = new MyObject();
+        lTheObject->mIndex = lCounter++;
+        pQueue->emplace(lTheObject);
+    }
+    pQueue->emplace(nullptr); //Signal end
+}
+
+void droSPSCConsumer(dro::SPSCQueue<MyObject*> *pQueue, int32_t aCPU) {
+    if (!pinThread(aCPU)) {
+        std::cout << "Pin CPU fail. " << std::endl;
+        --gActiveConsumer;
+        return;
+    }
+    uint64_t lCounter = 0;
+    while (true) {
+        MyObject* lResult = nullptr;
+        pQueue->pop(lResult);
+        if (lResult == nullptr) {
+            break;
+        }
+        if (lResult->mIndex != lCounter) {
+            std::cout << "Queue item error" << std::endl;
+        }
+        lCounter++;
+        delete lResult;
+    }
+    gCounter += lCounter;
+    --gActiveConsumer;
+}
+
+/// -----------------------------------------------------------
+///
+/// DroSPSC section End
+///
+/// -----------------------------------------------------------
 
 /// -----------------------------------------------------------
 ///
@@ -56,7 +114,7 @@ void deaodSPSCProducer(deaod::spsc_queue<MyObject*, QUEUE_MASK, 6> *pQueue, int3
         lTheObject->mIndex = lCounter++;
         bool lAbleToPush = false;
         while (!lAbleToPush && gActiveProducer) {
-            lAbleToPush = pQueue->push(std::move(lTheObject));
+            lAbleToPush = pQueue->push(lTheObject);
         }
     }
 }
@@ -125,7 +183,7 @@ void fastQueueProducer(FastQueue<MyObject*, QUEUE_MASK, L1_CACHE_LINE> *pQueue, 
 void fastQueueConsumer(FastQueue<MyObject*, QUEUE_MASK, L1_CACHE_LINE> *pQueue, int32_t aCPU) {
     if (!pinThread(aCPU)) {
         std::cout << "Pin CPU fail. " << std::endl;
-        gActiveConsumer--;
+        --gActiveConsumer;
         return;
     }
     uint64_t lCounter = 0;
@@ -142,7 +200,7 @@ void fastQueueConsumer(FastQueue<MyObject*, QUEUE_MASK, L1_CACHE_LINE> *pQueue, 
         delete pResult;
     }
     gCounter += lCounter;
-    gActiveConsumer--;
+    --gActiveConsumer;
 }
 
 /// -----------------------------------------------------------
@@ -152,6 +210,49 @@ void fastQueueConsumer(FastQueue<MyObject*, QUEUE_MASK, L1_CACHE_LINE> *pQueue, 
 /// -----------------------------------------------------------
 
 int main() {
+
+    ///
+    /// Dro test ->
+    ///
+
+    // Create the queue
+    auto droSPSC = new dro::SPSCQueue<MyObject*>(QUEUE_MASK);
+
+    // Start the consumer(s) / Producer(s)
+    gActiveConsumer++;
+
+    std::thread([droSPSC] { droSPSCConsumer(droSPSC, CONSUMER_CPU); }).detach();
+    std::thread([droSPSC] { droSPSCProducer(droSPSC, PRODUCER_CPU); }).detach();
+
+    // Wait for the OS to actually get it done.
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+    // Start the test
+    std::cout << "DroSPSC pointer test started." << std::endl;
+    gStartBench = true;
+    std::this_thread::sleep_for(std::chrono::seconds(TEST_TIME_DURATION_SEC));
+
+    // End the test
+    gActiveProducer = false;
+    std::cout << "DroSPSC pointer test ended." << std::endl;
+
+    // Wait for the consumers to 'join'
+    // Why not the classic join? I prepared for a multi thread case I need this function for.
+    while (gActiveConsumer) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+
+    // Garbage collect the queue
+    delete droSPSC;
+
+    // Print the result.
+    std::cout << "DroSPSC Transactions -> " << gCounter / TEST_TIME_DURATION_SEC << "/s" << std::endl;
+
+    // Zero the test parameters.
+    gStartBench = false;
+    gActiveProducer = true;
+    gCounter = 0;
+    gActiveConsumer = 0;
 
     ///
     /// DeaodSPSC test ->

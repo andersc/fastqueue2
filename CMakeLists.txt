@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.22)
 project(fast_queue2)
 
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 
 find_package (Threads REQUIRED)
 
@@ -16,6 +16,7 @@ else ()
 endif ()
 
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/deaod_spsc/)
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/dro/)
 
 add_executable(fast_queue2 main.cpp)
 target_link_libraries(fast_queue2 Threads::Threads)
