@@ -2,13 +2,13 @@
 
 # FastQueue2
 
-FastQueue2 is a rewrite of [FastQueue](https://github.com/andersc/fastqueue). Supporting 8 byte transfers only.
+FastQueue2 is a rewrite of [FastQueue](https://github.com/andersc/fastqueue). It supports 8-byte transfers only.
 
 ## But first
 
 * Is this queue memory efficient?
 
-	No. This queue aims for speed not memory efficiency.
+	No. This queue aims for speed, not memory efficiency.
 
 * The queue is ‘dramatically under-synchronized’
 
@@ -16,102 +16,145 @@ FastQueue2 is a rewrite of [FastQueue](https://github.com/andersc/fastqueue). Su
 
 * Why not use partial specialization for pointers since that's all you support?
 
-	This queue supports transport of 8 bytes from a producer to a consumer. It might be a pointer and it might not be a pointer so that’s why no specialization is implemented. However, if we gain speed using specialization of pointers then let’s implement that. I did not see any gain in my tests and this queue is all about speed.
+	This queue supports the transport of 8 bytes from a producer to a consumer. It might be a pointer and it might not be, so that’s why no specialization is implemented. However, if we gain speed by specializing for pointers, then let’s implement that. I did not see any gain in my tests, and this queue is all about speed.
 
 
 ## Background
 
-When I was playing around with benchmarking various SPSC queues [deaod’s](https://github.com/Deaod/spsc_queue) queue was unbeatable. The titans: [Rigtorp](https://github.com/rigtorp/SPSCQueue), [Folly](https://github.com/facebook/folly/tree/main), [moodycamel](https://github.com/cameron314/concurrentqueue) and [boost](https://www.boost.org/doc/libs/1_66_0/doc/html/lockfree.html) where all left in the dust, it was especially fast on Apple silicon. My previous attempt ([FastQueue](https://github.com/andersc/fastqueue)) trying to beat the titans is placing itself in the top tier but not #1. In my queue I also implemented a stop-queue mechanism missing from the other implementations. Anyhow….
+When I was playing around with benchmarking various SPSC queues, [deaod’s](https://github.com/Deaod/spsc_queue) queue was unbeatable. The titans — [Rigtorp](https://github.com/rigtorp/SPSCQueue), [Folly](https://github.com/facebook/folly/tree/main), [moodycamel](https://github.com/cameron314/concurrentqueue) and [boost](https://www.boost.org/doc/libs/1_66_0/doc/html/lockfree.html) — were all left in the dust; it was especially fast on Apple silicon. My previous attempt ([FastQueue](https://github.com/andersc/fastqueue)) at beating the titans placed itself in the top tier but not at #1. In my queue I also implemented a stop-queue mechanism that is missing from the other implementations. Anyhow….
 
-(Update added [Dro](https://github.com/drogalis/SPSC-Queue/tree/main) a promising SPSC Kingpin.. Run the benchmarks for results on your platform)  
+(Update: added [Dro](https://github.com/drogalis/SPSC-Queue/tree/main), a promising SPSC kingpin. Run the benchmarks for results on your platform.)
 
-So I took a new egoistic approach, meaning target my usecases to investigate if there were any fundamental changes to the system that then could be made. I’m only working with 64-bit CPU’s so let’s only target x86_64 and Arm64. Also for all my cases I pass pointers around so limiting the object to a 8 byte object is fine.
+So I took a new, egoistic approach: target my own use cases and investigate whether there were any fundamental changes to the system that could be made. I only work with 64-bit CPUs, so let’s only target x86_64 and ARM64. Also, in all my cases I pass pointers around, so limiting the object to an 8-byte object is fine.
 
-In the general SPSC queue implementation there is a circular buffer where push is looking if it’s possible to push an object by looking at the distance between the tail and head pointer/counter. The same goes for popping an object, if there is a distance between tail and head there is at least one object to pop. That means that if the push runs on one CPU and the pop runs on another CPU you share tail/head counters and the object itself between the CPU’s. 
+In the general SPSC queue implementation there is a circular buffer where push checks whether it’s possible to push an object by looking at the distance between the tail and head pointer/counter. The same goes for popping an object: if there is a distance between tail and head, there is at least one object to pop. That means that if the push runs on one CPU and the pop runs on another CPU, you share the tail/head counters and the object itself between the CPUs.
 
-![(deaods ringbuffer picture)](ring_buffer_concept.png)
+![Deaod's ring buffer diagram](ring_buffer_concept.png)
 
-*The above picture is taken from Deaods repo*
+*The above picture is taken from Deaod’s repo*
 
-I concluded based on the way I limit the usecase it’s possible to share the queue position by looking at the object itself (I’m aware that this is probably not something revolutionary. Most likely someone at Xerox PARC wrote a paper about this in the 70’s). That means that the CPU’s do not need to share its counters it only need to share the object, and it wants to share that object anyway. So it’s the absolute minimal amount of data. 
-However for this to work without sharing pointers/counters the object must be there or not. So when we pop the object in the reader thread then we also need to clear it’s position in the circular buffer by assigning a nullptr. And it also needs to do that without tearing that's why 8 bytes in a 64-bit environment works.
+The first version of this queue used the object slot *itself* as the full/empty
+flag: pop cleared the slot to `nullptr`, push waited for `nullptr`. Elegant, and
+it means the CPUs only ever share the object. The problem only shows up when you
+measure the *pure* queue (no per-message malloc masking it): that scheme bounces
+a whole cache line **both** directions for every single element (producer
+publishes the pointer → consumer reads it → consumer writes the `nullptr` back →
+producer reads that back), so it moves an order of magnitude more coherence
+traffic than a packed ring. Against a benchmark dominated by `new`/`delete` it
+looked great; as a raw queue it was several times slower than the titans.
 
-![(my ringbuffer picture)](ringbuffer.png)
+![My ring buffer diagram](ringbuffer.png)
 
-So the concept is exactly the same as before it’s just that we now know where we wrote an object last time now we just check if it’s possible to write an object in the next position before actually committing to doing that. If it's nullpt then we can write if not we got a full buffer and need to wait for the consumer.
+So this version keeps the FastQueue skin (same `push` / `pop` / `stopQueue`, still
+8-byte objects) but changes the engine to the fastest thing that actually wins on
+the hardware I measured:
 
-So if the tail hits the head we will not write any objects, and if the head hit’s the tail there are no objects to pop.
+* **Cached indices.** Each side keeps a *private* copy of the other side's index
+  and only re-reads the shared atomic when its cache says the queue is full
+  (producer) or empty (consumer). In steady state the producer only writes its
+  own write-index line plus the data; the consumer only writes its own read-index
+  line. The control lines stop ping-ponging.
+* **One-directional, packed data.** The slot is never written back, so a single
+  cache line carries many elements flowing producer → consumer instead of one
+  element bouncing both ways.
+* **Monotonic 64-bit counters** addressed with a mask — no wrap branch on the hot
+  path. Publishing is a single release store; the matching acquire load carries
+  the payload ordering, so the data store/load stay plain.
+* **The ring lives on the heap, far from the control block.** This one is the big
+  Apple-silicon surprise: embedding the ring next to the indices let the streaming
+  prefetcher drag data lines into the index-owning core and cut throughput ~3x.
+  Move the ring away and M-series throughput jumps from ~140M to ~490M.
 
-Using that mechanism we only need to share the actual object between the threads/cpus.
+If the tail catches the head there's nothing to pop; if the head catches the tail
+the buffer is full and push waits. Same contract as before, very different cost.
 
 ## The need for speed
 
-* So what speed do we get on my M1 Pro?
+A word on measuring first, because it bit me hard: the original benchmark ran
+each queue back-to-back in a fixed order, and on a laptop that means the queue
+that runs **first** gets the cold/turbo advantage and looks fastest. It also does
+`new`/`delete` per message, and that allocator cost (cross-thread free is
+expensive) dominates the loop and hides the queue entirely. So the numbers below
+come from a rewritten benchmark that **rotates the order every round**, reports
+the **median**, and runs two passes: a *heap* pass (new/delete per message, the
+classic FastQueue benchmark, allocator-bound) and a *pooled* pass (pre-allocated
+objects — this is what actually measures the queue).
 
-```
-DeaodSPSC pointer test started.
-DeaodSPSC pointer test ended.
-DeaodSPSC Transactions -> 12389023/s
-FastQueue pointer test started.
-FastQueue pointer test ended.
-FastQueue Transactions -> 17516515/s
-```
+Pooled pass, transactions/s, higher is better, median of rotated rounds.
+(Absolute numbers differ per machine mostly because of clock — compare within a
+row, not across rows; the Xeon is a 1.8 GHz low-power part.)
 
-And that’s a significant improvement over my previous attempt that was at around 10+M transactions per second (on my M1 Pro) while Deaod is at 12M.
+| Machine | FastQueue | Deaod | Dro |
+| --- | --- | --- | --- |
+| Apple M5 (ARM) | **~490M** | ~140–290M | ~95–105M |
+| ARM Cortex-X925 | ~86M | ~87M | ~93M |
+| AMD EPYC 7702 (Zen 2) | **~117M** | ~110M | ~101M |
+| AMD EPYC 7702P (Zen 2) | ~102M | ~99M | ~107M |
+| Intel Xeon E5-2630L v3 (Haswell) | **~38M** | ~25M | ~36M |
 
-What sparked me initially was the total dominance by Deaod on Apple Silicone now that's taken care of.. Yes! So in my application, the way the compiler compiles the code I by far beat Deaod. 
+On Apple silicon FastQueue runs away with it (3–5x). On x86 — both AMD EPYC and
+Intel Xeon — it leads or ties the pack after aligning the index lines to 128-byte
+prefetch pairs (see thought #1). On Cortex-X925 it is a dead heat. In the heap
+pass every queue collapses onto the allocator and they tie (~14M on EPYC, ~10M on
+Cortex, and FastQueue ~2x ahead at ~50–60M on the M5).
 
-* What about x86_64?  
-
-I don’t have access to a lot of x86 systems but I ran the code on a 64 core AMD EPYC 7763. I had to slightly modify the code to beat Deaod.
-
-```
-DeaodSPSC pointer test started.
-DeaodSPSC pointer test ended.
-DeaodSPSC Transactions -> 12397808/s
-FastQueue pointer test started.
-FastQueue pointer test ended.
-FastQueue Transactions -> 13755427/s
-```
-
-So great! Still champagne, but did not totally run over the competition. 10% faster so still significant. 
-
-The header file is under 60 lines of code and uses a combination of atomics and memory barriers to what I found the most optimal combination.
+On x86 the three top queues are, in fact, indistinguishable at the hardware level:
+`perf stat` shows all of them running at **IPC ≈ 0.3 with ~20% L1-load misses and
+near-zero last-level-cache misses** — i.e. purely bound by cross-core cache-line
+migration, not compute or bandwidth. There is no clever instruction sequence left
+to find; the only remaining lever is batching the index publish, which trades away
+per-message latency, so this queue doesn't take it.
 
 Push looks like this:
 
 ```cpp
-while(mRingBuffer[mWritePosition&RING_BUFFER_SIZE].mObj != nullptr) if (mExitThreadSemaphore) [[unlikely]] return;
-new(&mRingBuffer[mWritePosition++&RING_BUFFER_SIZE].mObj) T{std::forward<Args>(args)...};
+const uint64_t w = mWriteIndex.load(std::memory_order_relaxed);
+if (w - mReadIndexCache >= CAP) [[unlikely]] {          // cache says full - verify
+    do {
+        mReadIndexCache = mReadIndex.load(std::memory_order_acquire);
+        if (w - mReadIndexCache < CAP) break;
+        if (mExitThreadSemaphore.load(std::memory_order_relaxed)) [[unlikely]] return;
+    } while (true);
+}
+mRingBuffer[w & MASK] = T{std::forward<Args>(args)...};
+mWriteIndex.store(w + 1, std::memory_order_release);
 ```
-Simple. Is the slot free? if not is the queue still operating?
-If it's OK to push the object just put it in the queue.
+Is there space (per my cached copy of the read index)? If the cache says full,
+re-check the real read index; if it is still full, wait (or bail if stopped).
+Then write the slot and publish the new write index with a single release store.
 
 Pop looks like this:
 
 ```cpp
-std::atomic_thread_fence(std::memory_order_consume);
-while (!(aOut = mRingBuffer[mReadPosition & RING_BUFFER_SIZE].mObj)) {
-    if (mExitThread == mReadPosition) [[unlikely]] {
-        aOut = nullptr;
-        return;
-    }
+const uint64_t r = mReadIndex.load(std::memory_order_relaxed);
+if (r == mWriteIndexCache) [[unlikely]] {               // cache says empty - verify
+    do {
+        mWriteIndexCache = mWriteIndex.load(std::memory_order_acquire);
+        if (r != mWriteIndexCache) break;
+        if (mExitThreadSemaphore.load(std::memory_order_acquire)) [[unlikely]] {
+            mWriteIndexCache = mWriteIndex.load(std::memory_order_acquire);
+            if (r == mWriteIndexCache) { aOut = nullptr; return; }
+            break;
+        }
+    } while (true);
 }
-mRingBuffer[mReadPosition++ & RING_BUFFER_SIZE].mObj = nullptr;
+aOut = mRingBuffer[r & MASK];
+mReadIndex.store(r + 1, std::memory_order_release);
 ```
-Try popping the object. If sucessfull mark it free.
-If not sucessfull popping the object is the queue active?
-if it's not then just return nullptr
+Is there something to read (per my cached copy of the write index)? If the cache
+says empty, re-check; if it is still empty and the queue was stopped, drain any
+last items and then return nullptr. Otherwise read the slot and publish the new
+read index.
 
 
-Regarding inline, noexcept and [[unlikely]].. It's there. Yes I know -O3 always inlines and I have read what people say about [[unlikely]].
-If you don't like it. remove and pullrequest.
+Regarding `inline`, `noexcept` and `[[unlikely]]` — they're there. Yes, I know -O3 always inlines, and I have read what people say about `[[unlikely]]`.
+If you don't like it, remove it and send a pull request.
 
 ## Usage
 
-See the orignal fastqueue (the link above)
+See the original FastQueue (the link above).
 
-(just move the header file(s) to your project depending on arhitecture)
+(Just copy the header file for your architecture into your project.)
 **fast_queue_arm64.h** / **fast_queue_x86_64.h**
 
 ## Build and run the tests
@@ -125,7 +168,7 @@ cmake -DCMAKE_BUILD_TYPE=Release ..
 cmake --build .
 ```
 
-(Run the benchmark against Deaod)
+(Run the benchmark against Deaod and Dro)
 
 **./fast_queue2**
 
@@ -135,14 +178,30 @@ cmake --build .
 
 
 ## Some thoughts
-There are a couple of findings that puzzled me. 
+There are a couple of findings that puzzled me.
 
-1.	I had to increase the the spacing between the objects to two times the cache length for x86_64 to gain speed over Deaod. Why? It does not make any sense.
-2.	Pre-loading the cache when popping (I did comment out the code but play around yourself in the ARM version) did do nothing. Modern CPU’s pre-load the data speculatively anyway.
-3.	I got good speed when the ringbuffer size exceeded 1024 entries. Why? My guess is that it irons out the uneven behaviour between the producer consumer. It’s just that my queue there was a significant increase in efficiency while for Deaod I did not see that effect. Well.
-4. We are micro-benchmarking the resuls should be 'considered with a grain of salt'
+1.	Cache-line separation is not one-size-fits-all, but on both families the
+	right answer is "keep the two hot index lines out of each other's prefetch
+	window". x86's L2 spatial prefetcher pulls **128-byte (two-line) pairs**, so
+	the write index and read index must live in different 128-byte pairs — 128-byte
+	separation measured ~18% faster than 64 on AMD Zen (with 64, fetching one index
+	dragged the other core's index line along). On ARM (Apple M-series *and*
+	Cortex-X925) the streaming prefetcher reaches even further and **256-byte**
+	separation was best. So the alignment is set per-architecture in the two headers.
+2.	Heap-allocating the ring (instead of embedding it in the object) is worth ~3x
+	on Apple silicon. Sitting next to the indices, the ring got hoovered up by the
+	prefetcher into the wrong core. Moving it out is the single biggest M-series win.
+3.	Memory ordering is not free and not uniform: making the slot itself an
+	`std::atomic` with acquire/release (LDAR/STLR per access) was ~2.6x *slower* on
+	Apple silicon than plain loads/stores ordered by one release/acquire pair on the
+	index. Measure, don't assume.
+4.	Micro-benchmarks lie. The order you run competitors in, whether you malloc per
+	message, and how warm the machine is all swing the numbers more than the code
+	does. The benchmark here rotates order and reports medians for that reason —
+	the results should still be 'considered with a grain of salt'.
 
-Can this be beaten? Yes it can.. However the free version of me is as fast as this. The paid version of me is faster ;-)
+Can this be beaten? Yes it can — Deaod and Dro are right there and trade blows on
+the servers. On Apple silicon this one runs away. The paid version of me is faster ;-)
 
-Have fun 
+Have fun!
 
