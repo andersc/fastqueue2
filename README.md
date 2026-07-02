@@ -21,9 +21,7 @@ FastQueue2 is a rewrite of [FastQueue](https://github.com/andersc/fastqueue). It
 
 ## Background
 
-When I was playing around with benchmarking various SPSC queues, [deaod’s](https://github.com/Deaod/spsc_queue) queue was unbeatable. The titans — [Rigtorp](https://github.com/rigtorp/SPSCQueue), [Folly](https://github.com/facebook/folly/tree/main), [moodycamel](https://github.com/cameron314/concurrentqueue) and [boost](https://www.boost.org/doc/libs/1_66_0/doc/html/lockfree.html) — were all left in the dust; it was especially fast on Apple silicon. My previous attempt ([FastQueue](https://github.com/andersc/fastqueue)) at beating the titans placed itself in the top tier but not at #1. In my queue I also implemented a stop-queue mechanism that is missing from the other implementations. Anyhow….
-
-(Update: added [Dro](https://github.com/drogalis/SPSC-Queue/tree/main), a promising SPSC kingpin. Run the benchmarks for results on your platform.)
+When I was playing around with benchmarking various SPSC queues, [deaod’s](https://github.com/Deaod/spsc_queue) and [Dro’s](https://github.com/drogalis/SPSC-Queue/tree/main) queues were unbeatable. The titans — [Rigtorp](https://github.com/rigtorp/SPSCQueue), [Folly](https://github.com/facebook/folly/tree/main), [moodycamel](https://github.com/cameron314/concurrentqueue) and [boost](https://www.boost.org/doc/libs/1_66_0/doc/html/lockfree.html) — were all left in the dust; they were especially fast on Apple silicon. My previous attempt ([FastQueue](https://github.com/andersc/fastqueue)) at beating the titans placed itself in the top tier but not at #1. In my queue I also implemented a stop-queue mechanism that is missing from the other implementations. Anyhow….
 
 So I took a new, egoistic approach: target my own use cases and investigate whether there were any fundamental changes to the system that could be made. I only work with 64-bit CPUs, so let’s only target x86_64 and ARM64. Also, in all my cases I pass pointers around, so limiting the object to an 8-byte object is fine.
 
@@ -199,6 +197,19 @@ There are a couple of findings that puzzled me.
 	message, and how warm the machine is all swing the numbers more than the code
 	does. The benchmark here rotates order and reports medians for that reason —
 	the results should still be 'considered with a grain of salt'.
+5.	**Thread pinning barely works on macOS — expect noise.** `pin_thread.h` uses
+	`thread_policy_set` with `THREAD_AFFINITY_POLICY`, but on Apple silicon that is
+	only a *hint* (an affinity *tag* that suggests two threads share an L2); the
+	scheduler will still move your producer/consumer between P- and E-cores as it
+	pleases. There is no hard "run this thread on this core" on macOS. In practice
+	that means M-series numbers swing a lot run-to-run (I saw competitors move 3–4x
+	between runs purely from placement). Recommendations on macOS: run several times
+	and take the median (the benchmark does), keep the machine otherwise idle and
+	cool, and if you need determinism give the hot threads a high QoS
+	(`QOS_CLASS_USER_INTERACTIVE`) to bias them onto P-cores — but accept it is a
+	bias, not a guarantee. On Linux `pthread_setaffinity_np` is real pinning, so the
+	server numbers are far more stable. None of this affects correctness — it is
+	purely about reproducible measurement and latency determinism.
 
 Can this be beaten? Yes it can — Deaod and Dro are right there and trade blows on
 the servers. On Apple silicon this one runs away. The paid version of me is faster ;-)
