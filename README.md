@@ -58,7 +58,7 @@ and uses data/control layouts selected per architecture and measured workload:
   six-item cushion: measured best Zen2 throughput. Other x86 targets select
   monotonic indexes plus immediate drain: avoids phase-mask work and batching
   penalty on Haswell. Both remain user-overridable at compile time.
-* **Architecture-specific ring placement.** `fast_queue_arm64.h` keeps ring storage separate from control state. `fast_queue_x86_64.h` keeps ring storage inline. Both layouts preserve control-line isolation. ARM has no compile-time throughput profile; x86 profile selection is described below.
+* **Architecture-specific ring placement.** `fast_queue_arm64.h` selects queue-owned inline contiguous storage by default (`FQ_ARM_RING_INLINE=1`); define it as `0` to test separately allocated ARM storage. `fast_queue_x86_64.h` keeps ring storage inline. Both layouts preserve control-line isolation. ARM has no compile-time throughput profile; x86 profile selection is described below.
 
 If the tail catches the head there's nothing to pop; if the head catches the tail
 the buffer is full and push waits. Same contract as before, very different cost.
@@ -82,44 +82,42 @@ one row.
 | Machine | FastQueue | Deaod | Dro | David V5 |
 | --- | ---: | ---: | ---: | ---: |
 | Apple M5, macOS arm64 | **396.473M** | 165.428M | 77.379M | 154.271M |
-| ARM Cortex-X925 | Not yet re-measured | Not yet re-measured | Not yet re-measured | Not yet re-measured |
+| ARM Cortex-X925 + Cortex-A725, Linux arm64, X925 CPUs 5/6 | 84.478M | **92.927M** | 87.410M | 85.326M |
 | AMD EPYC 7702, Zen2 dual socket, CPUs 1/3 | **123.935M** | 90.443M | 107.959M | 102.075M |
 | AMD EPYC 7702P, Zen2, CPUs 1/3 | **118.629M** | 75.078M | 90.129M | 79.699M |
 | Intel Xeon E5-2630L v3, Haswell, CPUs 1/3 | **117.951M** | 28.725M | 31.869M | 27.067M |
 
-### Legacy benchmark break
+### Measurement method
 
-Commit `77e381d` published Apple M5 `~490M/s` and Cortex-X925 `~86–93M/s`
-figures. Do not compare them with this table. Its time-based harness detached
-workers, used non-atomic start/stop flags, and reported `gCounter /
-TEST_TIME_DURATION_SEC`. On FastQueue and Dro paths, consumer work after the
-five-second producer window drained queued items into `gCounter` while the
-fixed five-second denominator remained. It also did not include David V5.
-Those legacy scores can over-count post-window drain work.
+Every table row uses joined workers, atomic start gate, exact transfer count,
+sequence validation, four-way order rotation, pooled pointers, and a 12-round
+median. Compare queues only within one row.
 
-Current table uses joined workers, an atomic start gate, fixed exact transfer
-counts, sequence validation, four-way order rotation, and a 12-round median.
-Cortex-X925 needs a complete current-harness four-way rerun before measured
-cells can replace its status row; legacy values will not be copied here.
-
-Apple M5 arm64 row uses pooled pointers, `-O3 -DNDEBUG`, 5,000,000 fixed
-transfers, and 12 rotated rounds. FastQueue is row winner at 396.473M/s;
-Deaod is 165.428M/s, David V5 is 154.271M/s, and Dro is 77.379M/s. This
-measurement uses `FQ_ARM_RING_INLINE=1`: queue-owned contiguous storage, with
-peer-index caches and release/acquire publication. It removes extra pointer
-indirection from FastQueue's ARM hot path and gives Apple M5 favorable compact
-payload/control placement. The 100,000,000-transfer confirmation measured
+Apple M5 arm64 row uses 5,000,000 fixed transfers. FastQueue is row winner at
+396.473M/s; Deaod is 165.428M/s, David V5 is 154.271M/s, and Dro is 77.379M/s.
+`FQ_ARM_RING_INLINE=1` uses queue-owned contiguous storage with peer-index caches
+and release/acquire publication. The 100,000,000-transfer confirmation measured
 FastQueue 405.951M/s versus Deaod 176.884M/s, David V5 155.166M/s, and Dro
-72.701M/s. macOS affinity is a scheduler hint: there is no hard physical-core
-pinning, `chrt`, or governor control in this harness, so P-core/E-core placement
-adds variance.
+72.701M/s. macOS affinity is a scheduler hint, not hard physical-core pinning;
+P-core/E-core placement adds variance.
+
+Cortex-X925 Linux row uses 100,000,000 fixed transfers, physical X925 CPUs 5 and
+6, performance governor, `chrt -f 90`, and `g++ -O3 -DNDEBUG -march=native`.
+Host has two 5-core Cortex-X925 clusters (CPUs 5–9 and 15–19) plus
+Cortex-A725 cores (CPUs 0–4 and 10–14); CPUs 5/6 are distinct X925 cores in
+one cluster at 3.9 GHz. Deaod wins
+this workload at 92.927M/s; Dro, David V5, and FastQueue measure 87.410M/s,
+85.326M/s, and 84.478M/s. 5,000,000-transfer confirmation under identical
+controls measured Dro 85.788M/s, Deaod 85.255M/s, David V5 86.804M/s, and
+FastQueue 84.088M/s. FastQueue 3-second two-slot integrity test completed
+355,855 transactions.
 
 Linux x86 rows use pooled pointers, physical-core pinning, performance governor,
 `chrt -f 90`, `g++ -O3 -DNDEBUG -march=native`, exact sequence validation, and
 fixed transfer counts. FastQueue is row winner on all three listed x86 hosts:
 +14.8% versus Dro on dual-socket Zen2, +31.6% on single-socket Zen2, and +270.1%
-on this Haswell. These Linux controls improve repeatability; they do not make
-Linux and macOS absolute throughput directly comparable.
+on this Haswell. Linux controls improve repeatability; they do not make Linux and
+macOS absolute throughput directly comparable.
 
 David V5 comes from [David Álvarez Rosa's ring-buffer analysis](https://david.alvarezrosa.com/posts/optimizing-a-lock-free-ring-buffer/)
 Results identify row winners only for stated machine/workload conditions, not
