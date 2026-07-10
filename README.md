@@ -21,9 +21,9 @@ FastQueue2 is a rewrite of [FastQueue](https://github.com/andersc/fastqueue). It
 
 ## Background
 
-When I was playing around with benchmarking various SPSC queues, [deaod’s](https://github.com/Deaod/spsc_queue) and [Dro’s](https://github.com/drogalis/SPSC-Queue/tree/main) queues were unbeatable. The titans — [Rigtorp](https://github.com/rigtorp/SPSCQueue), [Folly](https://github.com/facebook/folly/tree/main), [moodycamel](https://github.com/cameron314/concurrentqueue) and [boost](https://www.boost.org/doc/libs/1_66_0/doc/html/lockfree.html) — were all left in the dust; they were especially fast on Apple silicon. My previous attempt ([FastQueue](https://github.com/andersc/fastqueue)) at beating the titans placed itself in the top tier but not at #1. In my queue I also implemented a stop-queue mechanism that is missing from the other implementations. Anyhow….
+When I was benchmarking SPSC queues, [deaod’s](https://github.com/Deaod/spsc_queue) and [Dro’s](https://github.com/drogalis/SPSC-Queue/tree/main) were strong baselines. [Rigtorp](https://github.com/rigtorp/SPSCQueue), [Folly](https://github.com/facebook/folly/tree/main), [moodycamel](https://github.com/cameron314/concurrentqueue), and [boost](https://www.boost.org/doc/libs/1_66_0/doc/html/lockfree.html) are other established implementations. My previous attempt ([FastQueue](https://github.com/andersc/fastqueue)) reached the top tier but did not lead every measured workload. It also implements `stopQueue`, which the comparison implementations do not all provide.
 
-So I took a new, egoistic approach: target my own use cases and investigate whether there were any fundamental changes to the system that could be made. I only work with 64-bit CPUs, so let’s only target x86_64 and ARM64. Also, in all my cases I pass pointers around, so limiting the object to an 8-byte object is fine.
+This project targets measured use cases rather than universal queue rankings: 64-bit x86_64 and arm64 CPUs, one producer, one consumer, and 8-byte transfers. Pointers are common payloads, but any 8-byte value fits.
 
 In the general SPSC queue implementation there is a circular buffer where push checks whether it’s possible to push an object by looking at the distance between the tail and head pointer/counter. The same goes for popping an object: if there is a distance between tail and head, there is at least one object to pop. That means that if the push runs on one CPU and the pop runs on another CPU, you share the tail/head counters and the object itself between the CPUs.
 
@@ -43,9 +43,8 @@ looked great; as a raw queue it was several times slower than the titans.
 
 ![My ring buffer diagram](ringbuffer.png)
 
-So this version keeps the FastQueue skin (same `push` / `pop` / `stopQueue`, still
-8-byte objects) but changes the engine to the fastest thing that actually wins on
-the hardware I measured:
+So this version keeps FastQueue API (`push`, `pop`, `stopQueue`, 8-byte objects)
+and uses data/control layouts selected per architecture and measured workload:
 
 * **Cached indices.** Each side keeps a *private* copy of the other side's index
   and only re-reads the shared atomic when its cache says the queue is full
@@ -59,9 +58,7 @@ the hardware I measured:
   six-item cushion: measured best Zen2 throughput. Other x86 targets select
   monotonic indexes plus immediate drain: avoids phase-mask work and batching
   penalty on Haswell. Both remain user-overridable at compile time.
-* **Architecture-specific ring placement.** ARM keeps ring storage separate from control state;
-  on x86_64, inline ring storage removes allocation and pointer indirection without a measured
-  regression. Both layouts preserve control-line isolation.
+* **Architecture-specific ring placement.** `fast_queue_arm64.h` keeps ring storage separate from control state. `fast_queue_x86_64.h` keeps ring storage inline. Both layouts preserve control-line isolation. ARM has no compile-time throughput profile; x86 profile selection is described below.
 
 If the tail catches the head there's nothing to pop; if the head catches the tail
 the buffer is full and push waits. Same contract as before, very different cost.
@@ -79,32 +76,41 @@ classic FastQueue benchmark, allocator-bound) and a *pooled* pass (pre-allocated
 objects — this is what actually measures the queue).
 
 Pooled pass, fixed transaction count, higher is better, median of 12 rotated rounds.
-(Absolute numbers differ per machine mostly because of clock — compare within a
-row.) Machines are identified by CPU model and pinned CPU pair; no internal host
-names or accounts are published.
+Absolute numbers differ by machine, compiler, clocks, and scheduler; compare queues within
+one row. Machines are identified by CPU model and CPU-pair configuration only; no internal
+host names or accounts are published.
 
 | Machine | FastQueue | Deaod | Dro | David V5 |
 | --- | ---: | ---: | ---: | ---: |
+| Apple M5, macOS arm64 | 162.219M | **205.336M** | 75.207M | 159.318M |
 | AMD EPYC 7702, Zen2 dual socket, CPUs 1/3 | **123.935M** | 90.443M | 107.959M | 102.075M |
 | AMD EPYC 7702P, Zen2, CPUs 1/3 | **118.629M** | 75.078M | 90.129M | 79.699M |
 | Intel Xeon E5-2630L v3, Haswell, CPUs 1/3 | **117.951M** | 28.725M | 31.869M | 27.067M |
 
-All x86 results use pooled pointers, physical-core pinning, performance governor,
+Apple M5 arm64 row uses pooled pointers, `-O3 -DNDEBUG`, 5,000,000 fixed
+transfers, and 12 rotated rounds. Deaod is row winner at 205.336M/s; FastQueue
+is 162.219M/s, ahead of David V5 and Dro. macOS affinity is a scheduler hint:
+there is no hard physical-core pinning, `chrt`, or governor control in this
+harness, so P-core/E-core placement adds variance.
+
+Linux x86 rows use pooled pointers, physical-core pinning, performance governor,
 `chrt -f 90`, `g++ -O3 -DNDEBUG -march=native`, exact sequence validation, and
-fixed transfer counts. FastQueue leads all three provided hosts: +14.8% versus Dro
-on dual-socket Zen2, +31.6% on single-socket Zen2, and +270.1% on this Haswell.
+fixed transfer counts. FastQueue is row winner on all three listed x86 hosts:
++14.8% versus Dro on dual-socket Zen2, +31.6% on single-socket Zen2, and +270.1%
+on this Haswell. These Linux controls improve repeatability; they do not make
+Linux and macOS absolute throughput directly comparable.
 
 David V5 comes from [David Álvarez Rosa's ring-buffer analysis](https://david.alvarezrosa.com/posts/optimizing-a-lock-free-ring-buffer/)
-and is included in benchmark. This demonstrates leadership on tested hosts, not
-universal #1 claim across every x86 CPU, compiler, capacity, or latency workload.
+Results identify row winners only for stated machine/workload conditions, not
+universal #1 across every CPU, compiler, capacity, or latency workload.
 
 Heap pass is allocator-bound. Use pooled objects, rotated order, joined worker
-threads, and median distributions for queue comparisons. Local Apple-host smoke is
-not x86 certification; reproduce x86 results on pinned physical cores.
+threads, fixed-work sequence validation, and median distributions for queue
+comparisons.
+### Per-architecture tuning
 
-### x86 tuning switches
-
-Header selects profile from GCC/Clang `-march` macros:
+`fast_queue_arm64.h` has no compile-time throughput profile. `fast_queue_x86_64.h`
+selects an x86 profile from GCC/Clang `-march` macros:
 
 * `-march=znver2`: `FQ_WRAPPED_INDICES=1`, `FQ_CONSUMER_CUSHION=6`.
 * Other x86 targets: `FQ_WRAPPED_INDICES=0`, `FQ_CONSUMER_CUSHION=0`.
@@ -216,22 +222,14 @@ There are a couple of findings that puzzled me.
 	message, and how warm the machine is all swing the numbers more than the code
 	does. The benchmark here rotates order and reports medians for that reason —
 	the results should still be 'considered with a grain of salt'.
-5.	**Thread pinning barely works on macOS — expect noise.** `pin_thread.h` uses
-	`thread_policy_set` with `THREAD_AFFINITY_POLICY`, but on Apple silicon that is
-	only a *hint* (an affinity *tag* that suggests two threads share an L2); the
-	scheduler will still move your producer/consumer between P- and E-cores as it
-	pleases. There is no hard "run this thread on this core" on macOS. In practice
-	that means M-series numbers swing a lot run-to-run (I saw competitors move 3–4x
-	between runs purely from placement). Recommendations on macOS: run several times
-	and take the median (the benchmark does), keep the machine otherwise idle and
-	cool, and if you need determinism give the hot threads a high QoS
-	(`QOS_CLASS_USER_INTERACTIVE`) to bias them onto P-cores — but accept it is a
-	bias, not a guarantee. On Linux `pthread_setaffinity_np` is real pinning, so the
-	server numbers are far more stable. None of this affects correctness — it is
-	purely about reproducible measurement and latency determinism.
+5.	**macOS and Linux expose different measurement controls.** On macOS,
+	`thread_policy_set` with `THREAD_AFFINITY_POLICY` is an affinity tag, not hard
+	core pinning; scheduler placement between P- and E-cores can change results.
+	Run several rounds and use medians. On Linux, `pthread_setaffinity_np`, a
+	performance governor, and `chrt` can constrain placement, frequency policy,
+	and scheduling policy; results still depend on CPU model, thermals, and system
+	load. These controls affect measurement repeatability, not correctness.
 
-Can this be beaten? Yes it can — Deaod and Dro are right there and trade blows on
-the servers. On Apple silicon this one runs away. The paid version of me is faster ;-)
-
-Have fun!
+Each benchmark row reports its own setup. Compare queues within a row; do not use
+absolute M/s values to compare different machines or operating systems.
 
