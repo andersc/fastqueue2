@@ -25,12 +25,13 @@
 
 #define QUEUE_MASK 0b1
 #define L1_CACHE_LINE 64
+#ifndef TEST_TIME_DURATION_SEC
 #define TEST_TIME_DURATION_SEC 200
+#endif
 
-bool gActiveProducer = true;
-std::atomic<uint64_t> gActiveConsumer = 0;
-bool gStartBench = false;
-std::atomic<uint64_t> gTransactions = 0;
+std::atomic<bool> gActiveProducer{true};
+std::atomic<bool> gStartBench{false};
+std::atomic<uint64_t> gTransactions{0};
 uint64_t gChk = 0;
 
 void producer(FastQueue<std::vector<uint8_t>*, QUEUE_MASK, L1_CACHE_LINE> *rQueue, int32_t aCPU) {
@@ -73,10 +74,15 @@ void consumer(FastQueue<std::vector<uint8_t>*, QUEUE_MASK, L1_CACHE_LINE> *rQueu
     std::uniform_int_distribution<int> lDist{1, 500};
     if (!pinThread(aCPU)) {
         std::cout << "Pin CPU fail. " << std::endl;
-        gActiveConsumer--;
         return;
     }
-    gActiveConsumer++;
+    while (!gStartBench.load(std::memory_order_acquire)) {
+#ifdef _MSC_VER
+        __nop();
+#else
+        asm("NOP");
+#endif
+    }
     while (true) {
         std::vector<uint8_t>* lResult = nullptr;
         rQueue->pop(lResult);
@@ -85,14 +91,12 @@ void consumer(FastQueue<std::vector<uint8_t>*, QUEUE_MASK, L1_CACHE_LINE> *rQueu
         }
         if (lCounter != *(uint64_t *) lResult->data()) {
             std::cout << "Test failed.. Not linear data. " << *(uint64_t *) lResult->data() << std::endl;
-            gActiveConsumer--;
             return;
         }
         uint64_t lSimpleSum = std::accumulate(lResult->begin() + 16, lResult->end(), 0);
         if (lSimpleSum != *(uint64_t *) (lResult->data() + 8)) {
             std::cout << "Test failed.. Not consistent data. " << lSimpleSum << " " << lCounter << " " << gChk
                       << std::endl;
-            gActiveConsumer--;
             return;
         }
         delete lResult;
@@ -101,23 +105,20 @@ void consumer(FastQueue<std::vector<uint8_t>*, QUEUE_MASK, L1_CACHE_LINE> *rQueu
         std::this_thread::sleep_for(std::chrono::nanoseconds(lSleep));
     }
     gTransactions = lCounter;
-    gActiveConsumer--;
 }
 
 int main() {
-    auto lQueue1 = new FastQueue<std::vector<uint8_t>*, QUEUE_MASK, L1_CACHE_LINE>();
-    std::thread([lQueue1] { return consumer(lQueue1, 0); }).detach();
-    std::thread([lQueue1] { return producer(lQueue1, 2); }).detach();
+    FastQueue<std::vector<uint8_t>*, QUEUE_MASK, L1_CACHE_LINE> queue;
+    std::thread consumerThread(consumer, &queue, 0);
+    std::thread producerThread(producer, &queue, 2);
     std::cout << "Producer -> Consumer (start)" << std::endl;
-    gStartBench = true;
+    gStartBench.store(true, std::memory_order_release);
     std::this_thread::sleep_for(std::chrono::seconds(TEST_TIME_DURATION_SEC));
-    gActiveProducer = false;
-    lQueue1->stopQueue();
+    gActiveProducer.store(false, std::memory_order_release);
+    producerThread.join();
+    queue.stopQueue();
+    consumerThread.join();
     std::cout << "Producer -> Consumer (end)" << std::endl;
-    while (gActiveConsumer) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
-    }
-    delete lQueue1;
     std::cout << "Test ended. Did " << gTransactions << " transactions." << std::endl;
     return EXIT_SUCCESS;
 }

@@ -55,13 +55,13 @@ the hardware I measured:
 * **One-directional, packed data.** The slot is never written back, so a single
   cache line carries many elements flowing producer → consumer instead of one
   element bouncing both ways.
-* **Monotonic 64-bit counters** addressed with a mask — no wrap branch on the hot
-  path. Publishing is a single release store; the matching acquire load carries
-  the payload ordering, so the data store/load stay plain.
-* **The ring lives on the heap, far from the control block.** This one is the big
-  Apple-silicon surprise: embedding the ring next to the indices let the streaming
-  prefetcher drag data lines into the index-owning core and cut throughput ~3x.
-  Move the ring away and M-series throughput jumps from ~140M to ~490M.
+* **x86 throughput profiles.** `-march=znver2` selects wrapped phase indexes plus
+  six-item cushion: measured best Zen2 throughput. Other x86 targets select
+  monotonic indexes plus immediate drain: avoids phase-mask work and batching
+  penalty on Haswell. Both remain user-overridable at compile time.
+* **Architecture-specific ring placement.** ARM keeps ring storage separate from control state;
+  on x86_64, inline ring storage removes allocation and pointer indirection without a measured
+  regression. Both layouts preserve control-line isolation.
 
 If the tail catches the head there's nothing to pop; if the head catches the tail
 the buffer is full and push waits. Same contract as before, very different cost.
@@ -78,30 +78,49 @@ the **median**, and runs two passes: a *heap* pass (new/delete per message, the
 classic FastQueue benchmark, allocator-bound) and a *pooled* pass (pre-allocated
 objects — this is what actually measures the queue).
 
-Pooled pass, transactions/s, higher is better, median of rotated rounds.
+Pooled pass, fixed transaction count, higher is better, median of 12 rotated rounds.
 (Absolute numbers differ per machine mostly because of clock — compare within a
-row, not across rows; the Xeon is a 1.8 GHz low-power part.)
+row.) Machines are identified by CPU model and pinned CPU pair; no internal host
+names or accounts are published.
 
-| Machine | FastQueue | Deaod | Dro |
-| --- | --- | --- | --- |
-| Apple M5 (ARM) | **~490M** | ~140–290M | ~95–105M |
-| ARM Cortex-X925 | ~86M | ~87M | ~93M |
-| AMD EPYC 7702 (Zen 2) | **~117M** | ~110M | ~101M |
-| AMD EPYC 7702P (Zen 2) | ~102M | ~99M | ~107M |
-| Intel Xeon E5-2630L v3 (Haswell) | **~38M** | ~25M | ~36M |
+| Machine | FastQueue | Deaod | Dro | David V5 |
+| --- | ---: | ---: | ---: | ---: |
+| AMD EPYC 7702, Zen2 dual socket, CPUs 1/3 | **123.935M** | 90.443M | 107.959M | 102.075M |
+| AMD EPYC 7702P, Zen2, CPUs 1/3 | **118.629M** | 75.078M | 90.129M | 79.699M |
+| Intel Xeon E5-2630L v3, Haswell, CPUs 1/3 | **117.951M** | 28.725M | 31.869M | 27.067M |
 
-On Apple silicon FastQueue runs away with it (3–5x). On x86 — both AMD EPYC and
-Intel Xeon — it leads or ties the pack after aligning the index lines to 128-byte
-prefetch pairs (see thought #1). On Cortex-X925 it is a dead heat. In the heap
-pass every queue collapses onto the allocator and they tie (~14M on EPYC, ~10M on
-Cortex, and FastQueue ~2x ahead at ~50–60M on the M5).
+All x86 results use pooled pointers, physical-core pinning, performance governor,
+`chrt -f 90`, `g++ -O3 -DNDEBUG -march=native`, exact sequence validation, and
+fixed transfer counts. FastQueue leads all three provided hosts: +14.8% versus Dro
+on dual-socket Zen2, +31.6% on single-socket Zen2, and +270.1% on this Haswell.
 
-On x86 the three top queues are, in fact, indistinguishable at the hardware level:
-`perf stat` shows all of them running at **IPC ≈ 0.3 with ~20% L1-load misses and
-near-zero last-level-cache misses** — i.e. purely bound by cross-core cache-line
-migration, not compute or bandwidth. There is no clever instruction sequence left
-to find; the only remaining lever is batching the index publish, which trades away
-per-message latency, so this queue doesn't take it.
+David V5 comes from [David Álvarez Rosa's ring-buffer analysis](https://david.alvarezrosa.com/posts/optimizing-a-lock-free-ring-buffer/)
+and is included in benchmark. This demonstrates leadership on tested hosts, not
+universal #1 claim across every x86 CPU, compiler, capacity, or latency workload.
+
+Heap pass is allocator-bound. Use pooled objects, rotated order, joined worker
+threads, and median distributions for queue comparisons. Local Apple-host smoke is
+not x86 certification; reproduce x86 results on pinned physical cores.
+
+### x86 tuning switches
+
+Header selects profile from GCC/Clang `-march` macros:
+
+* `-march=znver2`: `FQ_WRAPPED_INDICES=1`, `FQ_CONSUMER_CUSHION=6`.
+* Other x86 targets: `FQ_WRAPPED_INDICES=0`, `FQ_CONSUMER_CUSHION=0`.
+* Define either macro before including header to override profile.
+* `FQ_OCCUPANCY_INSTRUMENT=1` records empty-refresh occupancy and perturbs
+  throughput; diagnosis only.
+
+Fixed-work reproduction:
+
+```bash
+g++ -O3 -DNDEBUG -std=c++20 -march=native -DPOOLED_ONLY=1 \
+  -DTRANSFER_COUNT=100000000 -DROUNDS=12 -DCONSUMER_CPU=1 -DPRODUCER_CPU=3 \
+  -I. -Ideaod_spsc -Idro main.cpp -o bench
+sudo cpupower frequency-set -g performance
+sudo chrt -f 90 ./bench
+```
 
 Push looks like this:
 
@@ -159,7 +178,7 @@ See the original FastQueue (the link above).
 
 ```
 git clone https://github.com/andersc/fastqueue2.git
-cd fastqueue2 
+cd fastqueue2
 mkdir build
 cd build
 cmake -DCMAKE_BUILD_TYPE=Release ..
