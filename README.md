@@ -77,21 +77,42 @@ objects — this is what actually measures the queue).
 
 Pooled pass, fixed transaction count, higher is better, median of 12 rotated rounds.
 Absolute numbers differ by machine, compiler, clocks, and scheduler; compare queues within
-one row. Machines are identified by CPU model and CPU-pair configuration only; no internal
-host names or accounts are published.
+one row.
 
 | Machine | FastQueue | Deaod | Dro | David V5 |
 | --- | ---: | ---: | ---: | ---: |
-| Apple M5, macOS arm64 | 162.219M | **205.336M** | 75.207M | 159.318M |
+| Apple M5, macOS arm64 | **396.473M** | 165.428M | 77.379M | 154.271M |
+| ARM Cortex-X925 | Not yet re-measured | Not yet re-measured | Not yet re-measured | Not yet re-measured |
 | AMD EPYC 7702, Zen2 dual socket, CPUs 1/3 | **123.935M** | 90.443M | 107.959M | 102.075M |
 | AMD EPYC 7702P, Zen2, CPUs 1/3 | **118.629M** | 75.078M | 90.129M | 79.699M |
 | Intel Xeon E5-2630L v3, Haswell, CPUs 1/3 | **117.951M** | 28.725M | 31.869M | 27.067M |
 
+### Legacy benchmark break
+
+Commit `77e381d` published Apple M5 `~490M/s` and Cortex-X925 `~86–93M/s`
+figures. Do not compare them with this table. Its time-based harness detached
+workers, used non-atomic start/stop flags, and reported `gCounter /
+TEST_TIME_DURATION_SEC`. On FastQueue and Dro paths, consumer work after the
+five-second producer window drained queued items into `gCounter` while the
+fixed five-second denominator remained. It also did not include David V5.
+Those legacy scores can over-count post-window drain work.
+
+Current table uses joined workers, an atomic start gate, fixed exact transfer
+counts, sequence validation, four-way order rotation, and a 12-round median.
+Cortex-X925 needs a complete current-harness four-way rerun before measured
+cells can replace its status row; legacy values will not be copied here.
+
 Apple M5 arm64 row uses pooled pointers, `-O3 -DNDEBUG`, 5,000,000 fixed
-transfers, and 12 rotated rounds. Deaod is row winner at 205.336M/s; FastQueue
-is 162.219M/s, ahead of David V5 and Dro. macOS affinity is a scheduler hint:
-there is no hard physical-core pinning, `chrt`, or governor control in this
-harness, so P-core/E-core placement adds variance.
+transfers, and 12 rotated rounds. FastQueue is row winner at 396.473M/s;
+Deaod is 165.428M/s, David V5 is 154.271M/s, and Dro is 77.379M/s. This
+measurement uses `FQ_ARM_RING_INLINE=1`: queue-owned contiguous storage, with
+peer-index caches and release/acquire publication. It removes extra pointer
+indirection from FastQueue's ARM hot path and gives Apple M5 favorable compact
+payload/control placement. The 100,000,000-transfer confirmation measured
+FastQueue 405.951M/s versus Deaod 176.884M/s, David V5 155.166M/s, and Dro
+72.701M/s. macOS affinity is a scheduler hint: there is no hard physical-core
+pinning, `chrt`, or governor control in this harness, so P-core/E-core placement
+adds variance.
 
 Linux x86 rows use pooled pointers, physical-core pinning, performance governor,
 `chrt -f 90`, `g++ -O3 -DNDEBUG -march=native`, exact sequence validation, and
@@ -109,8 +130,11 @@ threads, fixed-work sequence validation, and median distributions for queue
 comparisons.
 ### Per-architecture tuning
 
-`fast_queue_arm64.h` has no compile-time throughput profile. `fast_queue_x86_64.h`
-selects an x86 profile from GCC/Clang `-march` macros:
+`fast_queue_arm64.h` selects an inline contiguous ring by default
+(`FQ_ARM_RING_INLINE=1`), which is measured fastest for Apple M5 pooled
+throughput. Define `FQ_ARM_RING_INLINE=0` to restore separately allocated ARM
+storage for experiments. `fast_queue_x86_64.h` selects an x86 profile from
+GCC/Clang `-march` macros:
 
 * `-march=znver2`: `FQ_WRAPPED_INDICES=1`, `FQ_CONSUMER_CUSHION=6`.
 * Other x86 targets: `FQ_WRAPPED_INDICES=0`, `FQ_CONSUMER_CUSHION=0`.
@@ -127,51 +151,6 @@ g++ -O3 -DNDEBUG -std=c++20 -march=native -DPOOLED_ONLY=1 \
 sudo cpupower frequency-set -g performance
 sudo chrt -f 90 ./bench
 ```
-
-Push looks like this:
-
-```cpp
-const uint64_t w = mWriteIndex.load(std::memory_order_relaxed);
-if (w - mReadIndexCache >= CAP) [[unlikely]] {          // cache says full - verify
-    do {
-        mReadIndexCache = mReadIndex.load(std::memory_order_acquire);
-        if (w - mReadIndexCache < CAP) break;
-        if (mExitThreadSemaphore.load(std::memory_order_relaxed)) [[unlikely]] return;
-    } while (true);
-}
-mRingBuffer[w & MASK] = T{std::forward<Args>(args)...};
-mWriteIndex.store(w + 1, std::memory_order_release);
-```
-Is there space (per my cached copy of the read index)? If the cache says full,
-re-check the real read index; if it is still full, wait (or bail if stopped).
-Then write the slot and publish the new write index with a single release store.
-
-Pop looks like this:
-
-```cpp
-const uint64_t r = mReadIndex.load(std::memory_order_relaxed);
-if (r == mWriteIndexCache) [[unlikely]] {               // cache says empty - verify
-    do {
-        mWriteIndexCache = mWriteIndex.load(std::memory_order_acquire);
-        if (r != mWriteIndexCache) break;
-        if (mExitThreadSemaphore.load(std::memory_order_acquire)) [[unlikely]] {
-            mWriteIndexCache = mWriteIndex.load(std::memory_order_acquire);
-            if (r == mWriteIndexCache) { aOut = nullptr; return; }
-            break;
-        }
-    } while (true);
-}
-aOut = mRingBuffer[r & MASK];
-mReadIndex.store(r + 1, std::memory_order_release);
-```
-Is there something to read (per my cached copy of the write index)? If the cache
-says empty, re-check; if it is still empty and the queue was stopped, drain any
-last items and then return nullptr. Otherwise read the slot and publish the new
-read index.
-
-
-Regarding `inline`, `noexcept` and `[[unlikely]]` — they're there. Yes, I know -O3 always inlines, and I have read what people say about `[[unlikely]]`.
-If you don't like it, remove it and send a pull request.
 
 ## Usage
 

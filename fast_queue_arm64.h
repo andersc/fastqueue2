@@ -4,102 +4,135 @@
 
 #pragma once
 
-#include <iostream>
+#include <array>
 #include <cstdint>
 #include <atomic>
 #include <cstdlib>
+#include <utility>
 
 // FastQueue2 - bounded lock-free SPSC queue for 8-byte objects.
 //
-// Design: a single-producer/single-consumer ring tuned so the two cores almost
-// never trade control cache lines. Each side keeps a private *cached* copy of
-// the other side's index and only re-reads the shared index when its cache says
-// the queue is full (producer) or empty (consumer). In steady state the producer
-// only writes its own write-index line plus the packed data; the consumer only
-// writes its own read-index line. Data flows strictly producer -> consumer (no
-// slot is ever written back), so one cache line carries many elements one way
-// instead of ping-ponging a whole line per element.
+// Producer and consumer own separate indexes and cache peer indexes locally.
+// A peer index is acquired only when cached state reports full or empty. Payload
+// publication uses release/acquire index handoff; payload accesses stay plain.
 //
-// Counters are monotonic 64-bit (they never wrap in any realistic runtime), so
-// the hot path has no wrap branch - the power-of-two ring is addressed with a
-// mask. Publishing uses release/acquire on the shared index; the payload
-// store/load are plain, ordered by that release/acquire pair.
-//
-// The ring is heap-allocated so it lives far from the control block: on Apple
-// silicon, embedding the ring next to the indices let the streaming prefetcher
-// drag data lines into the index-owning core and cut throughput ~3x. Separating
-// them is the single biggest win on M-series.
-//
-// FQ_CTL_ALIGN separates each independently-written field.
+// FQ_CTL_ALIGN separates independently-written control fields. Apple L2/SLC
+// coherence uses 128-byte lines, so 128 bytes is minimum safe separation.
 #ifndef FQ_CTL_ALIGN
-#define FQ_CTL_ALIGN (L1_CACHE_LNE * 4) // ARM: 256B separation measured best (Apple M-series, Cortex-X925)
+#define FQ_CTL_ALIGN (L1_CACHE_LNE * 4)
+#endif
+
+// ARM experiments:
+//   FQ_ARM_RING_INLINE  1 = queue-owned contiguous ring, 0 = separately allocated ring.
+#ifndef FQ_ARM_RING_INLINE
+#define FQ_ARM_RING_INLINE 1
 #endif
 
 template<typename T, uint64_t RING_BUFFER_SIZE, uint64_t L1_CACHE_LNE>
 class FastQueue {
     static_assert(sizeof(T) == 8, "Only 64 bit objects are supported");
     static_assert(sizeof(void*) == 8, "The architecture is not 64-bits");
-    static_assert((RING_BUFFER_SIZE & (RING_BUFFER_SIZE + 1)) == 0, "RING_BUFFER_SIZE must be a number of contiguous bits set from LSB. Example: 0b00001111 not 0b01001111");
-    static constexpr uint64_t CAP = RING_BUFFER_SIZE + 1;   // power of two
+    static_assert((RING_BUFFER_SIZE & (RING_BUFFER_SIZE + 1)) == 0,
+                  "RING_BUFFER_SIZE must be a number of contiguous bits set from LSB. Example: 0b00001111 not 0b01001111");
+
+    static constexpr uint64_t CAP = RING_BUFFER_SIZE + 1;
     static constexpr uint64_t MASK = RING_BUFFER_SIZE;
-    // aligned_alloc requires the size to be a multiple of the alignment.
-    static constexpr uint64_t BUF_BYTES = ((CAP * sizeof(T) + FQ_CTL_ALIGN - 1) / FQ_CTL_ALIGN) * FQ_CTL_ALIGN;
+#if !FQ_ARM_RING_INLINE
+    static constexpr uint64_t BUF_BYTES =
+        ((CAP * sizeof(T) + FQ_CTL_ALIGN - 1) / FQ_CTL_ALIGN) * FQ_CTL_ALIGN;
+#endif
+
 public:
     FastQueue() noexcept {
+#if FQ_ARM_RING_INLINE
+        // Slots are written before publication and never read before an index
+        // handoff, so value initialization is unnecessary on this hot-path type.
+#else
         mRingBuffer = static_cast<T*>(aligned_alloc(FQ_CTL_ALIGN, BUF_BYTES));
-        for (uint64_t i = 0; i < CAP; i++) mRingBuffer[i] = nullptr;
+        for (uint64_t i = 0; i < CAP; ++i) mRingBuffer[i] = nullptr;
+#endif
     }
-    ~FastQueue() { std::free(mRingBuffer); }
+
+    ~FastQueue() {
+#if !FQ_ARM_RING_INLINE
+        std::free(mRingBuffer);
+#endif
+    }
+
     FastQueue(const FastQueue&) = delete;
     FastQueue& operator=(const FastQueue&) = delete;
 
+    // Nonblocking SPSC operations. Use these where caller owns retry policy.
+    // They match other benchmarked queues: false reports only current full/empty
+    // state, with no stop-flag traffic on successful or retry paths.
+    template<typename... Args>
+    inline bool tryPush(Args&&... args) noexcept {
+        const uint64_t w = mWriteIndex.load(std::memory_order_relaxed);
+        if (w - mReadIndexCache >= CAP) [[unlikely]] {
+            mReadIndexCache = mReadIndex.load(std::memory_order_acquire);
+            if (w - mReadIndexCache >= CAP) return false;
+        }
+        slot(w) = T{std::forward<Args>(args)...};
+        mWriteIndex.store(w + 1, std::memory_order_release);
+        return true;
+    }
+
+    inline bool tryPop(T& aOut) noexcept {
+        const uint64_t r = mReadIndex.load(std::memory_order_relaxed);
+        if (r == mWriteIndexCache) [[unlikely]] {
+            mWriteIndexCache = mWriteIndex.load(std::memory_order_acquire);
+            if (r == mWriteIndexCache) return false;
+        }
+        aOut = slot(r);
+        mReadIndex.store(r + 1, std::memory_order_release);
+        return true;
+    }
+
     template<typename... Args>
     inline void push(Args&&... args) noexcept {
-        const uint64_t w = mWriteIndex.load(std::memory_order_relaxed);
-        if (w - mReadIndexCache >= CAP) [[unlikely]] {          // cache says full - verify
-            do {
-                mReadIndexCache = mReadIndex.load(std::memory_order_acquire);
-                if (w - mReadIndexCache < CAP) break;
-                if (mExitThreadSemaphore.load(std::memory_order_relaxed)) [[unlikely]] return;
-            } while (true);
+        while (!tryPush(std::forward<Args>(args)...)) {
+            if (mExitThreadSemaphore.load(std::memory_order_relaxed)) [[unlikely]] return;
         }
-        mRingBuffer[w & MASK] = T{std::forward<Args>(args)...};
-        mWriteIndex.store(w + 1, std::memory_order_release);
     }
 
     inline void pop(T& aOut) noexcept {
-        const uint64_t r = mReadIndex.load(std::memory_order_relaxed);
-        if (r == mWriteIndexCache) [[unlikely]] {               // cache says empty - verify
-            do {
-                mWriteIndexCache = mWriteIndex.load(std::memory_order_acquire);
-                if (r != mWriteIndexCache) break;
-                if (mExitThreadSemaphore.load(std::memory_order_acquire)) [[unlikely]] {
-                    // Stopped: re-read the write index (acquire) so any items the
-                    // producer published just before stopping are still drained.
-                    mWriteIndexCache = mWriteIndex.load(std::memory_order_acquire);
-                    if (r == mWriteIndexCache) { aOut = nullptr; return; }
-                    break;
-                }
-            } while (true);
+        while (!tryPop(aOut)) {
+            if (mExitThreadSemaphore.load(std::memory_order_acquire)) [[unlikely]] {
+                // One final acquire checks payload published before producer stop.
+                if (!tryPop(aOut)) aOut = nullptr;
+                return;
+            }
         }
-        aOut = mRingBuffer[r & MASK];
-        mReadIndex.store(r + 1, std::memory_order_release);
     }
 
-    //Stop queue (Maybe called from any thread)
-    void stopQueue() {
+    // May be called from any thread. Existing blocking API uses this only to
+    // terminate a blocked producer/consumer; nonblocking operations do not.
+    void stopQueue() noexcept {
         mExitThreadSemaphore.store(true, std::memory_order_release);
     }
 
 private:
-    // Producer-owned line: its write index + a cached copy of the read index.
+    inline T& slot(uint64_t index) noexcept {
+#if FQ_ARM_RING_INLINE
+        return mRingBuffer[index & MASK];
+#else
+        return mRingBuffer[index & MASK];
+#endif
+    }
+
+    // Producer-owned line.
     alignas(FQ_CTL_ALIGN) std::atomic<uint64_t> mWriteIndex = 0;
     uint64_t mReadIndexCache = 0;
-    // Consumer-owned line: its read index + a cached copy of the write index.
+    // Consumer-owned line.
     alignas(FQ_CTL_ALIGN) std::atomic<uint64_t> mReadIndex = 0;
     uint64_t mWriteIndexCache = 0;
-    // Shared, but only touched when a side runs dry / full.
+    // Cold shutdown state.
     alignas(FQ_CTL_ALIGN) std::atomic<bool> mExitThreadSemaphore = false;
-    // Heap ring, packed: one cache line carries many elements, producer -> consumer.
+#if FQ_ARM_RING_INLINE
+    // Inline form gives Apple prefetcher same layout option as Deaod.
+    alignas(FQ_CTL_ALIGN) std::array<T, CAP> mRingBuffer;
+#else
+    // Split form isolates streaming payload from control state.
     alignas(FQ_CTL_ALIGN) T* mRingBuffer = nullptr;
+#endif
 };

@@ -198,8 +198,8 @@ static RunResult runDeaod(bool pooled) {
 static RunResult runFast(bool pooled) {
     FastQueue<MyObject*, QUEUE_MASK, L1_CACHE_LINE> queue;
     return runOne(queue,
-                  [](auto& q, auto* object) { q.push(object); },
-                  [](auto& q, auto*& object) { q.pop(object); },
+                  [](auto& q, auto* object) { while (!q.tryPush(object)) {} },
+                  [](auto& q, auto*& object) { while (!q.tryPop(object)) {} },
                   [](auto& q) { q.stopQueue(); }, pooled);
 }
 
