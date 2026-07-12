@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <atomic>
 #include <cstdlib>
+#include <span>
 #include <utility>
 
 // FastQueue2 - bounded lock-free SPSC queue for 8-byte objects.
@@ -88,6 +89,40 @@ public:
         return true;
     }
 
+    inline std::size_t tryPushBulk(std::span<const T> items) noexcept {
+        const uint64_t requested = items.size() < 8 ? items.size() : 8;
+        if (requested == 0) return 0;
+
+        const uint64_t w = mWriteIndex.load(std::memory_order_relaxed);
+        uint64_t free = CAP - (w - mReadIndexCache);
+        if (free < requested) [[unlikely]] {
+            mReadIndexCache = mReadIndex.load(std::memory_order_acquire);
+            free = CAP - (w - mReadIndexCache);
+            if (free == 0) return 0;
+        }
+        const uint64_t count = requested < free ? requested : free;
+        copyIntoRing(w, items.data(), count);
+        mWriteIndex.store(w + count, std::memory_order_release);
+        return count;
+    }
+
+    inline std::size_t tryPopBulk(std::span<T> output) noexcept {
+        const uint64_t requested = output.size() < 8 ? output.size() : 8;
+        if (requested == 0) return 0;
+
+        const uint64_t r = mReadIndex.load(std::memory_order_relaxed);
+        uint64_t available = mWriteIndexCache - r;
+        if (available < requested) [[unlikely]] {
+            mWriteIndexCache = mWriteIndex.load(std::memory_order_acquire);
+            available = mWriteIndexCache - r;
+            if (available == 0) return 0;
+        }
+        const uint64_t count = requested < available ? requested : available;
+        copyFromRing(r, output.data(), count);
+        mReadIndex.store(r + count, std::memory_order_release);
+        return count;
+    }
+
     template<typename... Args>
     inline void push(Args&&... args) noexcept {
         while (!tryPush(std::forward<Args>(args)...)) {
@@ -118,6 +153,14 @@ private:
 #else
         return mRingBuffer[index & MASK];
 #endif
+    }
+
+    void copyIntoRing(uint64_t index, const T* input, uint64_t count) noexcept {
+        for (uint64_t i = 0; i < count; ++i) slot(index + i) = input[i];
+    }
+
+    void copyFromRing(uint64_t index, T* output, uint64_t count) noexcept {
+        for (uint64_t i = 0; i < count; ++i) output[i] = slot(index + i);
     }
 
     // Producer-owned line.

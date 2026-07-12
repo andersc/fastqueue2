@@ -8,6 +8,7 @@
 #include <atomic>
 #include <cstdint>
 #include <iostream>
+#include <span>
 #include <utility>
 
 // FastQueue2 - bounded lock-free SPSC queue for 8-byte objects.
@@ -129,6 +130,40 @@ public:
         mReadIndex.store(nextIndex(r), std::memory_order_release);
     }
 
+    inline std::size_t tryPushBulk(std::span<const T> items) noexcept {
+        const uint64_t requested = items.size() < 8 ? items.size() : 8;
+        if (requested == 0) return 0;
+
+        const uint64_t w = mWriteIndex.load(std::memory_order_relaxed);
+        uint64_t free = CAP - distance(w, mReadIndexCache);
+        if (free < requested) [[unlikely]] {
+            mReadIndexCache = mReadIndex.load(std::memory_order_acquire);
+            free = CAP - distance(w, mReadIndexCache);
+            if (free == 0) return 0;
+        }
+        const uint64_t count = requested < free ? requested : free;
+        copyIntoRing(w, items.data(), count);
+        mWriteIndex.store(advanceIndex(w, count), std::memory_order_release);
+        return count;
+    }
+
+    inline std::size_t tryPopBulk(std::span<T> output) noexcept {
+        const uint64_t requested = output.size() < 8 ? output.size() : 8;
+        if (requested == 0) return 0;
+
+        const uint64_t r = mReadIndex.load(std::memory_order_relaxed);
+        uint64_t available = distance(mWriteIndexCache, r);
+        if (available < requested) [[unlikely]] {
+            mWriteIndexCache = mWriteIndex.load(std::memory_order_acquire);
+            available = distance(mWriteIndexCache, r);
+            if (available == 0) return 0;
+        }
+        const uint64_t count = requested < available ? requested : available;
+        copyFromRing(r, output.data(), count);
+        mReadIndex.store(advanceIndex(r, count), std::memory_order_release);
+        return count;
+    }
+
     // Stop may be called by any thread. Consumer drains all published entries.
     void stopQueue() noexcept {
         mExitThreadSemaphore.store(true, std::memory_order_release);
@@ -152,6 +187,22 @@ private:
 #else
         return index + 1;
 #endif
+    }
+
+    static constexpr uint64_t advanceIndex(uint64_t index, uint64_t count) noexcept {
+#if FQ_WRAPPED_INDICES
+        return (index + count) & INDEX_WRAP_MASK;
+#else
+        return index + count;
+#endif
+    }
+
+    void copyIntoRing(uint64_t index, const T* input, uint64_t count) noexcept {
+        for (uint64_t i = 0; i < count; ++i) mRingBuffer[(index + i) & MASK] = input[i];
+    }
+
+    void copyFromRing(uint64_t index, T* output, uint64_t count) noexcept {
+        for (uint64_t i = 0; i < count; ++i) output[i] = mRingBuffer[(index + i) & MASK];
     }
 
     static constexpr uint64_t distance(uint64_t newer, uint64_t older) noexcept {

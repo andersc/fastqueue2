@@ -154,6 +154,22 @@ See the original FastQueue (the link above).
 (Just copy the header file for your architecture into your project.)
 **fast_queue_arm64.h** / **fast_queue_x86_64.h**
 
+## Bulk API
+
+`tryPushBulk` and `tryPopBulk` move up to eight 8-byte objects with one
+release/acquire index publication. Pass `std::span<const T>` to producer and
+`std::span<T>` to consumer. Each returns exact number moved: zero when full or
+empty, partial count when fewer than requested fit or are available. Inputs
+larger than eight are capped at eight; caller owns remainder and retry policy.
+
+```cpp
+std::array<Job*, 8> jobs;
+const auto pushed = queue.tryPushBulk(jobs);
+const auto popped = queue.tryPopBulk(jobs);
+```
+
+Order is FIFO across scalar and bulk calls. No blocking bulk API exists.
+
 ## Build and run the tests
 
 ```
@@ -168,6 +184,10 @@ cmake --build .
 (Run the benchmark against Deaod and Dro)
 
 **./fast_queue2**
+
+(Run bulk API tests)
+
+**ctest --output-on-failure**
 
 (Run the integrity test)
 
