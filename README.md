@@ -82,7 +82,7 @@ one row.
 | Machine | FastQueue | Deaod | Dro | David V5 |
 | --- | ---: | ---: | ---: | ---: |
 | Apple M5, macOS arm64 | **396.473M** | 165.428M | 77.379M | 154.271M |
-| ARM Cortex-X925 + Cortex-A725, Linux arm64, X925 CPUs 5/6 | 84.478M | **92.927M** | 87.410M | 85.326M |
+| ARM Cortex-X925 + Cortex-A725, Linux arm64, X925 CPUs 5/6 | 83.678M | 86.346M | **87.382M** | 86.551M |
 | AMD EPYC 7702, Zen2 dual socket, CPUs 1/3 | **123.935M** | 90.443M | 107.959M | 102.075M |
 | AMD EPYC 7702P, Zen2, CPUs 1/3 | **118.629M** | 75.078M | 90.129M | 79.699M |
 | Intel Xeon E5-2630L v3, Haswell, CPUs 1/3 | **117.951M** | 28.725M | 31.869M | 27.067M |
@@ -101,16 +101,13 @@ FastQueue 405.951M/s versus Deaod 176.884M/s, David V5 155.166M/s, and Dro
 72.701M/s. macOS affinity is a scheduler hint, not hard physical-core pinning;
 P-core/E-core placement adds variance.
 
-Cortex-X925 Linux row uses 100,000,000 fixed transfers, physical X925 CPUs 5 and
-6, performance governor, `chrt -f 90`, and `g++ -O3 -DNDEBUG -march=native`.
-Host has two 5-core Cortex-X925 clusters (CPUs 5–9 and 15–19) plus
-Cortex-A725 cores (CPUs 0–4 and 10–14); CPUs 5/6 are distinct X925 cores in
-one cluster at 3.9 GHz. Deaod wins
-this workload at 92.927M/s; Dro, David V5, and FastQueue measure 87.410M/s,
-85.326M/s, and 84.478M/s. 5,000,000-transfer confirmation under identical
-controls measured Dro 85.788M/s, Deaod 85.255M/s, David V5 86.804M/s, and
-FastQueue 84.088M/s. FastQueue 3-second two-slot integrity test completed
-355,855 transactions.
+Cortex-X925 Linux row was re-run with 100,000,000 fixed transfers, physical X925
+CPUs 5 and 6, performance governor, `chrt -f 90`, and
+`g++ -O3 -DNDEBUG -march=native`. Host has two 5-core Cortex-X925 clusters
+(CPUs 5–9 and 15–19) plus Cortex-A725 cores (CPUs 0–4 and 10–14); CPUs 5/6 are
+distinct X925 cores in one cluster at 3.9 GHz. Dro wins this workload at
+87.382M/s; David V5, Deaod, and FastQueue measure 86.551M/s, 86.346M/s, and
+83.678M/s. Results are median of 12 rotated rounds from this current run.
 
 Linux x86 rows use pooled pointers, physical-core pinning, performance governor,
 `chrt -f 90`, `g++ -O3 -DNDEBUG -march=native`, exact sequence validation, and
@@ -188,13 +185,13 @@ There are a couple of findings that puzzled me.
 	dragged the other core's index line along). On ARM (Apple M-series *and*
 	Cortex-X925) the streaming prefetcher reaches even further and **256-byte**
 	separation was best. So the alignment is set per-architecture in the two headers.
-2.	Heap-allocating the ring (instead of embedding it in the object) is worth ~3x
-	on Apple silicon. Sitting next to the indices, the ring got hoovered up by the
-	prefetcher into the wrong core. Moving it out is the single biggest M-series win.
+2.	On Apple M5, queue-owned inline contiguous ring storage measured fastest in the
+	pooled benchmark. `FQ_ARM_RING_INLINE=1` is therefore default; define it as `0`
+	to test separately allocated ARM storage.
 3.	Memory ordering is not free and not uniform: making the slot itself an
 	`std::atomic` with acquire/release (LDAR/STLR per access) was ~2.6x *slower* on
 	Apple silicon than plain loads/stores ordered by one release/acquire pair on the
-	index. Measure, don't assume.
+	index.
 4.	Micro-benchmarks lie. The order you run competitors in, whether you malloc per
 	message, and how warm the machine is all swing the numbers more than the code
 	does. The benchmark here rotates order and reports medians for that reason —
