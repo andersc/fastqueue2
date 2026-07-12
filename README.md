@@ -170,6 +170,41 @@ const auto popped = queue.tryPopBulk(jobs);
 
 Order is FIFO across scalar and bulk calls. No blocking bulk API exists.
 
+## Bulk benchmark results
+
+Bulk mode is FastQueue-only. It batches producer and consumer requests at eight
+pointers, reports **items/s** (not batches/s), and keeps exact FIFO validation.
+It is not a four-queue comparison because Deaod, Dro, and David V5 do not expose
+matching bulk APIs.
+
+| CPU / OS | Fixed transfers | Scalar median | Bulk-8 median | Item-rate change |
+|---|---:|---:|---:|---:|
+| Apple M5, macOS arm64 | 100M | 421.534 M/s | **802.330 M/s** | **+90.3%** |
+| AMD EPYC 7702P (Zen2), Linux x86_64 | 100M | 86.548 M/s | **222.700 M/s** | **+157.3%** |
+
+Both rows use pooled pointers, `-std=c++20 -O3 -DNDEBUG -march=native`, 12
+joined solo rounds, exact sequence validation, and median item throughput.
+M5 uses scheduler affinity tags; Zen2 uses producer CPU 0 and consumer CPU 1.
+Zen2 host controls were unchanged from normal non-realtime SSH execution, so
+compare scalar and bulk only within that row.
+
+Build scalar or batch-eight FastQueue profiles:
+
+```sh
+clang++ -std=c++20 -O3 -DNDEBUG -march=native -pthread -I deaod_spsc -I dro \
+  -DSOLO_QUEUE=4 -DPOOLED_ONLY=1 -DTRANSFER_COUNT=100000000ULL -DROUNDS=12 \
+  -DBULK_BATCH_SIZE=0 main.cpp -o fastqueue-scalar
+
+clang++ -std=c++20 -O3 -DNDEBUG -march=native -pthread -I deaod_spsc -I dro \
+  -DSOLO_QUEUE=4 -DPOOLED_ONLY=1 -DTRANSFER_COUNT=100000000ULL -DROUNDS=12 \
+  -DBULK_BATCH_SIZE=8 main.cpp -o fastqueue-bulk8
+```
+
+`BULK_BATCH_SIZE=0` selects scalar API. Values `1..8` select fixed FastQueue
+batch size. Bulk copy uses unrolled contiguous prefix/suffix transfers at ring
+wrap. No AVX2, AVX-512, or NEON intrinsic path is enabled: measured gain comes
+from batching index publication; ISA-specific code needs prove a further gain.
+
 ## Build and run the tests
 
 ```

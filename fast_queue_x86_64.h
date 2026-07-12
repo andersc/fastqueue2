@@ -5,6 +5,7 @@
 #pragma once
 
 #include <array>
+#include <algorithm>
 #include <atomic>
 #include <cstdint>
 #include <iostream>
@@ -130,6 +131,28 @@ public:
         mReadIndex.store(nextIndex(r), std::memory_order_release);
     }
 
+    inline bool tryPush(const T& item) noexcept {
+        const uint64_t w = mWriteIndex.load(std::memory_order_relaxed);
+        if (distance(w, mReadIndexCache) >= CAP) [[unlikely]] {
+            mReadIndexCache = mReadIndex.load(std::memory_order_acquire);
+            if (distance(w, mReadIndexCache) >= CAP) return false;
+        }
+        mRingBuffer[w & MASK] = item;
+        mWriteIndex.store(nextIndex(w), std::memory_order_release);
+        return true;
+    }
+
+    inline bool tryPop(T& output) noexcept {
+        const uint64_t r = mReadIndex.load(std::memory_order_relaxed);
+        if (r == mWriteIndexCache) [[unlikely]] {
+            mWriteIndexCache = mWriteIndex.load(std::memory_order_acquire);
+            if (r == mWriteIndexCache) return false;
+        }
+        output = mRingBuffer[r & MASK];
+        mReadIndex.store(nextIndex(r), std::memory_order_release);
+        return true;
+    }
+
     inline std::size_t tryPushBulk(std::span<const T> items) noexcept {
         const uint64_t requested = items.size() < 8 ? items.size() : 8;
         if (requested == 0) return 0;
@@ -197,12 +220,34 @@ private:
 #endif
     }
 
+    static inline void copyContiguous(T* destination, const T* source, uint64_t count) noexcept {
+        // Bounded 1..8 transfer. Explicit cases avoid loop/index-mask work in
+        // hot batch path; no ISA-specific vector code until measurements justify it.
+        switch (count) {
+            case 8: destination[7] = source[7]; [[fallthrough]];
+            case 7: destination[6] = source[6]; [[fallthrough]];
+            case 6: destination[5] = source[5]; [[fallthrough]];
+            case 5: destination[4] = source[4]; [[fallthrough]];
+            case 4: destination[3] = source[3]; [[fallthrough]];
+            case 3: destination[2] = source[2]; [[fallthrough]];
+            case 2: destination[1] = source[1]; [[fallthrough]];
+            case 1: destination[0] = source[0]; [[fallthrough]];
+            default: return;
+        }
+    }
+
     void copyIntoRing(uint64_t index, const T* input, uint64_t count) noexcept {
-        for (uint64_t i = 0; i < count; ++i) mRingBuffer[(index + i) & MASK] = input[i];
+        const uint64_t offset = index & MASK;
+        const uint64_t first = std::min(count, CAP - offset);
+        copyContiguous(mRingBuffer.data() + offset, input, first);
+        copyContiguous(mRingBuffer.data(), input + first, count - first);
     }
 
     void copyFromRing(uint64_t index, T* output, uint64_t count) noexcept {
-        for (uint64_t i = 0; i < count; ++i) output[i] = mRingBuffer[(index + i) & MASK];
+        const uint64_t offset = index & MASK;
+        const uint64_t first = std::min(count, CAP - offset);
+        copyContiguous(output, mRingBuffer.data() + offset, first);
+        copyContiguous(output + first, mRingBuffer.data(), count - first);
     }
 
     static constexpr uint64_t distance(uint64_t newer, uint64_t older) noexcept {

@@ -5,6 +5,7 @@
 #pragma once
 
 #include <array>
+#include <algorithm>
 #include <cstdint>
 #include <atomic>
 #include <cstdlib>
@@ -155,12 +156,40 @@ private:
 #endif
     }
 
+    static inline void copyContiguous(T* destination, const T* source, uint64_t count) noexcept {
+        switch (count) {
+            case 8: destination[7] = source[7]; [[fallthrough]];
+            case 7: destination[6] = source[6]; [[fallthrough]];
+            case 6: destination[5] = source[5]; [[fallthrough]];
+            case 5: destination[4] = source[4]; [[fallthrough]];
+            case 4: destination[3] = source[3]; [[fallthrough]];
+            case 3: destination[2] = source[2]; [[fallthrough]];
+            case 2: destination[1] = source[1]; [[fallthrough]];
+            case 1: destination[0] = source[0]; [[fallthrough]];
+            default: return;
+        }
+    }
+
     void copyIntoRing(uint64_t index, const T* input, uint64_t count) noexcept {
-        for (uint64_t i = 0; i < count; ++i) slot(index + i) = input[i];
+        const uint64_t offset = index & MASK;
+        const uint64_t first = std::min(count, CAP - offset);
+        copyContiguous(ringData() + offset, input, first);
+        copyContiguous(ringData(), input + first, count - first);
     }
 
     void copyFromRing(uint64_t index, T* output, uint64_t count) noexcept {
-        for (uint64_t i = 0; i < count; ++i) output[i] = slot(index + i);
+        const uint64_t offset = index & MASK;
+        const uint64_t first = std::min(count, CAP - offset);
+        copyContiguous(output, ringData() + offset, first);
+        copyContiguous(output + first, ringData(), count - first);
+    }
+
+    T* ringData() noexcept {
+#if FQ_ARM_RING_INLINE
+        return mRingBuffer.data();
+#else
+        return mRingBuffer;
+#endif
     }
 
     // Producer-owned line.

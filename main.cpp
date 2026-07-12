@@ -50,9 +50,11 @@ class MyObject { public: uint64_t mIndex; };
 #define HEAP_ONLY 0
 #endif
 static_assert(!(POOLED_ONLY && HEAP_ONLY), "Select at most one payload mode");
-#ifndef SOLO_QUEUE
-#define SOLO_QUEUE 0
+#ifndef BULK_BATCH_SIZE
+#define BULK_BATCH_SIZE 0
 #endif
+static_assert(BULK_BATCH_SIZE >= 0 && BULK_BATCH_SIZE <= 8,
+              "BULK_BATCH_SIZE must be 0 (scalar) or 1..8");
 
 static constexpr uint32_t POOL_SZ = 1u << 16;
 static MyObject gPool[POOL_SZ];
@@ -197,10 +199,64 @@ static RunResult runDeaod(bool pooled) {
 
 static RunResult runFast(bool pooled) {
     FastQueue<MyObject*, QUEUE_MASK, L1_CACHE_LINE> queue;
+#if BULK_BATCH_SIZE == 0
     return runOne(queue,
                   [](auto& q, auto* object) { while (!q.tryPush(object)) {} },
                   [](auto& q, auto*& object) { while (!q.tryPop(object)) {} },
                   [](auto& q) { q.stopQueue(); }, pooled);
+#else
+    RunControl control;
+    std::atomic<uint64_t> consumed{0};
+
+    std::thread consumer([&] {
+        if (!pinThread(CONSUMER_CPU)) { control.pinFailed.store(true); return; }
+        std::array<MyObject*, BULK_BATCH_SIZE> batch{};
+        uint64_t expected = 0;
+        waitStart(control);
+        while (expected < TRANSFER_COUNT) {
+            const auto requested = static_cast<std::size_t>(std::min<uint64_t>(BULK_BATCH_SIZE, TRANSFER_COUNT - expected));
+            const auto popped = queue.tryPopBulk(std::span{batch}.first(requested));
+            for (std::size_t i = 0; i < popped; ++i) {
+                verify(batch[i], expected++);
+                freeObj(pooled, batch[i]);
+            }
+        }
+        consumed.store(TRANSFER_COUNT, std::memory_order_relaxed);
+    });
+
+    std::thread producer([&] {
+        if (!pinThread(PRODUCER_CPU)) { control.pinFailed.store(true); return; }
+        std::array<MyObject*, BULK_BATCH_SIZE> batch{};
+        uint64_t produced = 0;
+        waitStart(control);
+        while (produced < TRANSFER_COUNT) {
+            const auto requested = static_cast<std::size_t>(std::min<uint64_t>(BULK_BATCH_SIZE, TRANSFER_COUNT - produced));
+            for (std::size_t i = 0; i < requested; ++i) {
+                auto* object = allocObj(pooled, produced + i);
+                object->mIndex = produced + i;
+                batch[i] = object;
+            }
+            std::size_t sent = 0;
+            while (sent < requested) {
+                sent += queue.tryPushBulk(std::span{batch}.subspan(sent, requested - sent));
+            }
+            produced += requested;
+        }
+        queue.stopQueue();
+    });
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    const auto begin = std::chrono::steady_clock::now();
+    control.start.store(true, std::memory_order_release);
+    producer.join();
+    consumer.join();
+    const auto end = std::chrono::steady_clock::now();
+    if (control.pinFailed.load() || consumed.load(std::memory_order_relaxed) != TRANSFER_COUNT) {
+        std::cerr << "Pin or transfer failed. Pick valid distinct CPU IDs.\n";
+        std::terminate();
+    }
+    return {.operationsPerSecond = TRANSFER_COUNT / std::chrono::duration<double>(end - begin).count()};
+#endif
 }
 
 static RunResult runDavid(bool pooled) {
