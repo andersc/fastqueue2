@@ -192,7 +192,18 @@ prefix/suffix copies, so no copy reads or writes beyond either ring or batch.
 SIMD changes payload copy only. Availability remains one index-distance check;
 release/acquire index handoff remains one publication per returned batch.
 
-## Bulk benchmark results
+### Rejected alternatives
+
+Batch width stays a compile-time template selected by caller-side `switch`.
+Measured runtime-count loops and function-pointer dispatch did not produce a
+repeatable peak-width win; both can prevent full copy unrolling and inlining.
+Do not infer count by scanning payload lanes for `nullptr`: FastQueue uses
+cached producer/consumer indices for occupancy, permits null 8-byte payloads,
+and a lane scan adds payload loads and compares to hot path. Non-temporal stores
+also do not fit this hand-off: consumer reads newly published ring slots soon
+after producer writes them. Keep fixed-width API unless target benchmark proves
+otherwise.
+
 
 Bulk mode is FastQueue-only. It reports **items/s**, preserves exact FIFO
 validation, and uses fixed transfer count, joined producer/consumer workers,

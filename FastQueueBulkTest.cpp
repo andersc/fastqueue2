@@ -48,7 +48,11 @@ static void deterministicTests() {
     Batch input{};
     Batch output{};
     std::array<uint64_t, 32> values{};
-    for (uint64_t i = 0; i < values.size(); ++i) input.items[i & 7] = &values[i];
+    // Each slot's content is its own index so the dereference checks below verify
+    // real data movement. (Without this, values stay zero and the assertions only
+    // hold for index 0 — masked in Release, which strips asserts via NDEBUG.)
+    for (uint64_t i = 0; i < values.size(); ++i) values[i] = i;
+    for (uint64_t i = 0; i < Batch::max_size; ++i) input.items[i] = &values[i];
 
     assert(pop(queue, output, 8) == 0);
     assert(push(queue, input, 8) == 8);
