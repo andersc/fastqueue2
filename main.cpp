@@ -53,8 +53,9 @@ static_assert(!(POOLED_ONLY && HEAP_ONLY), "Select at most one payload mode");
 #ifndef BULK_BATCH_SIZE
 #define BULK_BATCH_SIZE 0
 #endif
-static_assert(BULK_BATCH_SIZE >= 0 && BULK_BATCH_SIZE <= 8,
-              "BULK_BATCH_SIZE must be 0 (scalar) or 1..8");
+static_assert(BULK_BATCH_SIZE >= 0 &&
+              BULK_BATCH_SIZE <= static_cast<int>(FastQueueBatch<MyObject*>::max_size),
+              "BULK_BATCH_SIZE exceeds FastQueueBatch target cache-line capacity");
 
 static constexpr uint32_t POOL_SZ = 1u << 16;
 static MyObject gPool[POOL_SZ];
@@ -211,6 +212,14 @@ static std::size_t pushBatch(FastQueueType& queue, const FastBatch& batch,
         case 6: return queue.tryPushBatch<6>(batch, offset);
         case 7: return queue.tryPushBatch<7>(batch, offset);
         case 8: return queue.tryPushBatch<8>(batch, offset);
+        case 9: return queue.tryPushBatch<9>(batch, offset);
+        case 10: return queue.tryPushBatch<10>(batch, offset);
+        case 11: return queue.tryPushBatch<11>(batch, offset);
+        case 12: return queue.tryPushBatch<12>(batch, offset);
+        case 13: return queue.tryPushBatch<13>(batch, offset);
+        case 14: return queue.tryPushBatch<14>(batch, offset);
+        case 15: return queue.tryPushBatch<15>(batch, offset);
+        case 16: return queue.tryPushBatch<16>(batch, offset);
         default: return 0;
     }
 }
@@ -226,6 +235,14 @@ static std::size_t popBatch(FastQueueType& queue, FastBatch& batch,
         case 6: return queue.tryPopBatch<6>(batch, offset);
         case 7: return queue.tryPopBatch<7>(batch, offset);
         case 8: return queue.tryPopBatch<8>(batch, offset);
+        case 9: return queue.tryPopBatch<9>(batch, offset);
+        case 10: return queue.tryPopBatch<10>(batch, offset);
+        case 11: return queue.tryPopBatch<11>(batch, offset);
+        case 12: return queue.tryPopBatch<12>(batch, offset);
+        case 13: return queue.tryPopBatch<13>(batch, offset);
+        case 14: return queue.tryPopBatch<14>(batch, offset);
+        case 15: return queue.tryPopBatch<15>(batch, offset);
+        case 16: return queue.tryPopBatch<16>(batch, offset);
         default: return 0;
     }
 }

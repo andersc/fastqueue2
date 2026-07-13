@@ -33,13 +33,23 @@
 #define FQ_ARM_RING_INLINE 1
 #endif
 
-// Caller-owned payload staging. items contains eight adjacent 8-byte
-// objects: exactly 64 bytes on 64-bit systems. This is payload storage, not a
-// descriptor. Keep producer and consumer batches thread-local.
+// Caller-owned payload staging. Batch width follows target L1 cache-line
+// size: Apple Silicon has 128-byte lines (16 pointers); common AArch64 Linux
+// targets use 64-byte lines (8 pointers). Override FQ_ARM_BATCH_BYTES only
+// after verifying target line size. Keep producer/consumer batches thread-local.
+#ifndef FQ_ARM_BATCH_BYTES
+# if defined(__APPLE__)
+#  define FQ_ARM_BATCH_BYTES 128
+# else
+#  define FQ_ARM_BATCH_BYTES 64
+# endif
+#endif
+static_assert(FQ_ARM_BATCH_BYTES >= 64 && (FQ_ARM_BATCH_BYTES % 64) == 0,
+              "FQ_ARM_BATCH_BYTES must be a multiple of 64");
 template<typename T>
-struct alignas(64) FastQueueBatch {
+struct alignas(FQ_ARM_BATCH_BYTES) FastQueueBatch {
     static_assert(sizeof(T) == 8, "FastQueueBatch holds 8-byte objects only");
-    static constexpr std::size_t max_size = 8;
+    static constexpr std::size_t max_size = FQ_ARM_BATCH_BYTES / sizeof(T);
     T items[max_size];
 };
 
@@ -180,26 +190,14 @@ private:
         // contiguous segment; copyInto/FromRing split every wrap first.
         if constexpr (std::is_trivially_copyable_v<T>) {
 #if defined(__aarch64__) || defined(__ARM_NEON)
-            if (count >= 2) {
-                const uint64x2_t a = vld1q_u64(reinterpret_cast<const uint64_t*>(source));
-                vst1q_u64(reinterpret_cast<uint64_t*>(destination), a);
-                if (count == 2) return;
-                if (count >= 4) {
-                    const uint64x2_t b = vld1q_u64(reinterpret_cast<const uint64_t*>(source + 2));
-                    vst1q_u64(reinterpret_cast<uint64_t*>(destination + 2), b);
-                    if (count == 4) return;
-                    if (count >= 6) {
-                        const uint64x2_t c = vld1q_u64(reinterpret_cast<const uint64_t*>(source + 4));
-                        vst1q_u64(reinterpret_cast<uint64_t*>(destination + 4), c);
-                        if (count == 6) return;
-                        if (count == 8) {
-                            const uint64x2_t d = vld1q_u64(reinterpret_cast<const uint64_t*>(source + 6));
-                            vst1q_u64(reinterpret_cast<uint64_t*>(destination + 6), d);
-                            return;
-                        }
-                        destination += 6; source += 6; count -= 6;
-                    } else { destination += 4; source += 4; count -= 4; }
-                } else { destination += 2; source += 2; count -= 2; }
+            // Two pointers per NEON register. Handles 64-byte and Apple
+            // 128-byte batch payloads without crossing split wrap segments.
+            while (count >= 2) {
+                const uint64x2_t value = vld1q_u64(reinterpret_cast<const uint64_t*>(source));
+                vst1q_u64(reinterpret_cast<uint64_t*>(destination), value);
+                destination += 2;
+                source += 2;
+                count -= 2;
             }
 #endif
         }

@@ -67,6 +67,17 @@ static void deterministicTests() {
     assert(pop(queue, output, 6) == 6);
     for (uint64_t i = 0; i < 6; ++i) assert(*output.items[i] == i + 16);
 
+#if defined(__aarch64__) || defined(__arm64__)
+    // Apple Silicon uses 128-byte lines: validate full 16-pointer batch copy.
+    if constexpr (Batch::max_size >= 16) {
+        Queue lineQueue;
+        for (uint64_t i = 0; i < 16; ++i) input.items[i] = &values[i];
+        assert(lineQueue.tryPushBatch<16>(input) == 8); // Queue capacity bounds transfer.
+        assert(lineQueue.tryPopBatch<16>(output) == 8);
+        for (uint64_t i = 0; i < 8; ++i) assert(*output.items[i] == i);
+    }
+#endif
+
     uint64_t scalar = 30;
     assert(queue.tryPush(&scalar));
     input.items[0] = &values[31];

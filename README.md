@@ -156,11 +156,18 @@ See the original FastQueue (the link above).
 
 ## Bulk API
 
-`FastQueueBatch<T>` is caller-owned, `alignas(64)` payload staging containing
-exactly eight adjacent 8-byte objects (64 bytes). This replaces prior
-`std::span` entry points: batch hot calls no longer take pointer-plus-length
-metadata, and `N` is compile-time fixed. Keep one batch per producer/consumer
-work context. `N` is `1..8`; `offset` retries only an unsent/undrained suffix.
+`FastQueueBatch<T>` is caller-owned cache-line payload staging, not a
+pointer-plus-length descriptor. `N` is compile-time fixed; hot batch calls pass
+only batch address plus optional retry offset. Keep one batch per
+producer/consumer work context.
+
+* x86 batch storage is `alignas(64)`: eight adjacent 8-byte objects. `N=1..8`.
+* Apple Silicon batch storage is `alignas(128)`: sixteen adjacent 8-byte
+  objects, matching its reported 128-byte data-cache line. `N=1..16`.
+* Other AArch64 targets default to 64 bytes / eight objects. Override
+  `FQ_ARM_BATCH_BYTES` only after confirming target cache-line size.
+
+`offset` retries only an unsent/undrained suffix.
 
 ```cpp
 FastQueueBatch<Job*> jobs{};
@@ -179,46 +186,60 @@ Batch payload copy uses only contiguous ring segments. Ring wrap splits into
 prefix/suffix copies, so no copy reads or writes beyond either ring or batch.
 - x86: scalar fallback; AVX2 copies four pointers/vector (two vectors for 8);
   AVX-512 copies 8 in one vector only when compiled with `__AVX512F__`.
-- ARM: NEON copies two pointers/vector (four vectors for 8) on AArch64.
+- ARM: NEON copies two pointers/vector; Apple 128-byte batches use up to eight
+  vectors for 16 pointers. Other AArch64 defaults remain 8 pointers.
 
 SIMD changes payload copy only. Availability remains one index-distance check;
 release/acquire index handoff remains one publication per returned batch.
 
 ## Bulk benchmark results
 
-Bulk mode is FastQueue-only. It batches producer and consumer requests at eight
-pointers, reports **items/s** (not batches/s), and keeps exact FIFO validation.
-It is not a four-queue comparison because Deaod, Dro, and David V5 do not expose
-matching bulk APIs.
+Bulk mode is FastQueue-only. It reports **items/s**, preserves exact FIFO
+validation, and uses fixed transfer count, joined producer/consumer workers,
+start gate, 12 solo rounds, and median result. It is not a four-queue comparison:
+Deaod, Dro, and David V5 have no matching bulk APIs.
 
-| CPU / OS | Fixed transfers | Scalar median | Bulk-8 median | Item-rate change |
-|---|---:|---:|---:|---:|
-| Apple M5, macOS arm64 | 100M | 421.534 M/s | **802.330 M/s** | **+90.3%** |
-| AMD EPYC 7702P (Zen2), Linux x86_64 | 100M | 86.548 M/s | **222.700 M/s** | **+157.3%** |
+### Measured width sweep
 
-Both rows use pooled pointers, `-std=c++20 -O3 -DNDEBUG -march=native`, 12
-joined solo rounds, exact sequence validation, and median item throughput.
-M5 uses scheduler affinity tags; Zen2 uses producer CPU 0 and consumer CPU 1.
-Zen2 host controls were unchanged from normal non-realtime SSH execution, so
-compare scalar and bulk only within that row.
+| CPU / OS | Build / pinning | Scalar | Best fixed width | Best median | Gain |
+|---|---|---:|---:|---:|---:|
+| Apple M5, macOS arm64 | `-O3 -DNDEBUG -march=native`, scheduler affinity | 423.462 M/s | **14 pointers** | **984.153 M/s** | **+132.4%** |
+| AMD EPYC 7702P (Zen2), Linux x86_64 | `-march=znver2`, CPUs 5/6 via `taskset` | 87.189 M/s | **2 pointers** | **216.493 M/s** | **+148.3%** |
 
-Build scalar or batch-eight FastQueue profiles:
+M5 confirmation used 100M transfers/12 rounds. Fixed-14 raw range:
+`953.279–995.004 M/s`; fixed-16 was lower at `907.194 M/s` median. Its earlier
+30M/9-round width sweep showed width 8 `819.813`, 9 `831.228`, 10 `760.521`,
+11 `869.855`, 12 `788.865`, 13 `912.711`, 14 `986.292`, 15 `849.421`, and 16
+`920.233 M/s` median. Result is architecture, compiler, CPU placement, and
+frequency dependent; do not treat width 14 as universal.
+
+Zen2 100M/12-round sweep medians for widths 1..8 were: `96.676`, `216.493`,
+`200.052`, `110.051`, `104.375`, `135.896`, `134.609`, and `183.968 M/s`.
+Fixed-2 wins there. Wider batch does **not** guarantee more throughput because
+queue occupancy, retry patterns, compiler code shape, and cache/coherence traffic
+can dominate payload copy work.
+
+### Reproduce before claims
 
 ```sh
-clang++ -std=c++20 -O3 -DNDEBUG -march=native -pthread -I deaod_spsc -I dro \
+# Apple M5: target cache-line capacity supports widths 0..16.
+clang++ -std=c++20 -O3 -DNDEBUG -march=native -pthread -I. -Ideaod_spsc -Idro \
   -DSOLO_QUEUE=4 -DPOOLED_ONLY=1 -DTRANSFER_COUNT=100000000ULL -DROUNDS=12 \
-  -DBULK_BATCH_SIZE=0 main.cpp -o fastqueue-scalar
+  -DBULK_BATCH_SIZE=14 main.cpp -o fastqueue-bulk14
 
-clang++ -std=c++20 -O3 -DNDEBUG -march=native -pthread -I deaod_spsc -I dro \
+# Zen2: target cache-line capacity supports widths 0..8.
+g++ -std=c++20 -O3 -DNDEBUG -march=znver2 -pthread -I. -Ideaod_spsc -Idro \
   -DSOLO_QUEUE=4 -DPOOLED_ONLY=1 -DTRANSFER_COUNT=100000000ULL -DROUNDS=12 \
-  -DBULK_BATCH_SIZE=8 main.cpp -o fastqueue-bulk8
+  -DPRODUCER_CPU=5 -DCONSUMER_CPU=6 -DBULK_BATCH_SIZE=2 main.cpp -o fastqueue-bulk2
+taskset -c 5,6 ./fastqueue-bulk2
 ```
 
-`BULK_BATCH_SIZE=0` selects scalar API. Values `1..8` select fixed FastQueue
-batch size. Bulk copy uses contiguous prefix/suffix transfers at ring wrap.
-Build x86 SIMD variants with `-mavx2` or `-mavx512f` only on CPUs that support
-them; AArch64 builds enable NEON path automatically. Measure each width and ISA
-on target hardware before making throughput claims.
+`BULK_BATCH_SIZE=0` selects scalar API. Valid batch widths are target-specific:
+`1..8` on x86 and standard 64-byte-line AArch64; `1..16` on Apple Silicon's
+128-byte-line default. Build x86 SIMD variants with `-mavx2` or `-mavx512f` only
+on supporting CPUs. SIMD modifies payload copy only; it did not make wider Zen2
+batches automatically win. Measure each width and ISA on target hardware before
+claims.
 
 ## Build and run the tests
 
