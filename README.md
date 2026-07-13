@@ -180,7 +180,11 @@ const auto popped = queue.tryPopBatch<2>(jobs);
 
 Each returns exact number moved: zero when full or empty, partial count when
 fewer than requested fit or are available. FIFO holds across scalar and batch
-calls. No blocking batch API exists.
+calls. No blocking batch API exists. Calls may vary width independently: producer
+can request `1`, then `6`, `5`, `3`, `8`; consumer can request different widths.
+On a partial result, retry same requested width with `offset += moved` until its
+suffix is sent or received. Do not reuse or overwrite unsent batch slots before
+that retry completes.
 
 Batch payload copy uses only contiguous ring segments. Ring wrap splits into
 prefix/suffix copies, so no copy reads or writes beyond either ring or batch.
@@ -216,6 +220,10 @@ Deaod, Dro, and David V5 have no matching bulk APIs.
 |---|---|---:|---:|---:|---:|
 | Apple M5, macOS arm64 | `-O3 -DNDEBUG -march=native`, scheduler affinity | 423.462 M/s | **14 pointers** | **984.153 M/s** | **+132.4%** |
 | AMD EPYC 7702P (Zen2), Linux x86_64 | `-march=znver2`, CPUs 5/6 via `taskset` | 87.189 M/s | **2 pointers** | **216.493 M/s** | **+148.3%** |
+| ARM Cortex-X925, Linux arm64 | `-march=native`, X925 CPUs 5/6, `taskset` | 92.575 M/s | **8 pointers** | **667.779 M/s** | **+621.3%** |
+| AMD EPYC 7702, Zen2 dual socket, Linux x86_64 | `-march=native`, same-socket CPUs 1/3, `taskset` | 91.247 M/s | **2 pointers** | **218.096 M/s** | **+139.0%** |
+| Intel Xeon E5-2630L v3, Haswell, Linux x86_64 | `-march=native`, same-socket CPUs 1/3, `taskset` | 26.541 M/s | **1 pointer** | **141.074 M/s** | **+431.5%** |
+| AMD EPYC 7702P, Zen2, Linux x86_64 | `-march=native`, CPUs 1/3, `taskset` | 85.442 M/s | **2 pointers** | **211.500 M/s** | **+147.5%** |
 
 M5 confirmation used 100M transfers/12 rounds. Fixed-14 raw range:
 `953.279–995.004 M/s`; fixed-16 was lower at `907.194 M/s` median. Its earlier
@@ -229,6 +237,24 @@ Zen2 100M/12-round sweep medians for widths 1..8 were: `96.676`, `216.493`,
 Fixed-2 wins there. Wider batch does **not** guarantee more throughput because
 queue occupancy, retry patterns, compiler code shape, and cache/coherence traffic
 can dominate payload copy work.
+
+Original Linux benchmark hosts received a native 100M-transfer, 12-round pooled
+FastQueue-only sweep using their existing CPU pairs. All selected pairs are
+separate physical cores under `performance` governor: Cortex-X925 CPUs 5/6 are
+same X925 cluster; f131 Zen2 CPUs 1/3 and f061 Haswell CPUs 1/3 are same socket;
+f177 Zen2P CPUs 1/3 are local physical cores. Sweep medians `BULK_BATCH_SIZE=0..8`:
+
+| Host / CPU | Width 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | Winner |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| f181 Cortex-X925 | 92.575 | 83.220 | 135.053 | 230.171 | 500.039 | 359.211 | 413.696 | 453.453 | **670.492** | 8 |
+| f131 EPYC 7702 | 97.338 | 100.476 | **220.244** | 67.120 | 122.665 | 107.988 | 136.775 | 132.755 | 176.345 | 2 |
+| f061 Haswell | 121.776 | **132.575** | 24.363 | 20.505 | 27.601 | 30.126 | 34.074 | 37.332 | 51.699 | 1 |
+| f177 EPYC 7702P | 84.343 | 92.049 | **213.277** | 198.824 | 110.455 | 100.775 | 133.186 | 132.867 | 188.305 | 2 |
+
+Values above are M items/s. Full 100M confirmation selected final winners as
+reported table: f181 width 8 `667.779`; f131 width 2 `218.096`; f061 width 1
+`141.074`; f177 width 2 `211.500`. These are FastQueue scalar-vs-bulk results
+only, not competitor comparisons.
 
 ### Reproduce before claims
 

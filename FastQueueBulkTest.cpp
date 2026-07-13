@@ -2,6 +2,7 @@
 #include <atomic>
 #include <cassert>
 #include <cstdint>
+#include <cstdlib>
 #include <thread>
 
 #if defined(__aarch64__) || defined(__arm64__)
@@ -12,6 +13,10 @@
 
 using Queue = FastQueue<uint64_t*, 7, 64>; // Capacity 8: force full/partial/wrap cases.
 using Batch = FastQueueBatch<uint64_t*>;
+
+static void expect(bool condition) {
+    if (!condition) std::abort();
+}
 
 static std::size_t push(Queue& queue, const Batch& batch, std::size_t count,
                         std::size_t offset = 0) {
@@ -126,7 +131,52 @@ static void concurrentTest() {
     consumer.join();
 }
 
+static void concurrentDynamicCountTest() {
+    constexpr std::array<std::size_t, 5> pushWidths{1, 6, 5, 3, 8};
+    constexpr std::array<std::size_t, 5> popWidths{8, 3, 5, 6, 1};
+    constexpr uint64_t count = 250003;
+    Queue queue;
+    std::array<uint64_t, count> values{};
+    std::atomic<bool> start{false};
+
+    std::thread producer([&] {
+        Batch batch{};
+        uint64_t next = 0;
+        std::size_t turn = 0;
+        while (!start.load(std::memory_order_acquire)) {}
+        while (next < count) {
+            const auto width = std::min(pushWidths[turn++ % pushWidths.size()],
+                                        static_cast<std::size_t>(count - next));
+            for (std::size_t i = 0; i < width; ++i) batch.items[i] = &values[next + i];
+            std::size_t sent = 0;
+            while (sent < width) sent += push(queue, batch, width, sent);
+            next += width;
+        }
+    });
+    std::thread consumer([&] {
+        Batch batch{};
+        uint64_t expected = 0;
+        std::size_t turn = 0;
+        while (!start.load(std::memory_order_acquire)) {}
+        while (expected < count) {
+            const auto width = std::min(popWidths[turn++ % popWidths.size()],
+                                        static_cast<std::size_t>(count - expected));
+            std::size_t received = 0;
+            while (received < width) {
+                received += pop(queue, batch, width, received);
+                for (std::size_t i = 0; i < received; ++i)
+                    expect(batch.items[i] == &values[expected + i]);
+            }
+            expected += width;
+        }
+    });
+    start.store(true, std::memory_order_release);
+    producer.join();
+    consumer.join();
+}
+
 int main() {
     deterministicTests();
     concurrentTest();
+    concurrentDynamicCountTest();
 }
