@@ -186,6 +186,96 @@ On a partial result, retry same requested width with `offset += moved` until its
 suffix is sent or received. Do not reuse or overwrite unsent batch slots before
 that retry completes.
 
+### Callback with runtime item count
+
+Callbacks often receive a runtime count: `2`, `56`, `32`, `23`, `11`, `1`, `3`,
+`67`, and so on. Split it into chunks no larger than
+`FastQueueBatch<T*>::max_size`, stage one chunk, then select its fixed width with
+a `switch`. x86/default ARM have max width 8; Apple ARM builds with 128-byte
+batches have max width 16.
+
+```cpp
+#include <algorithm>
+#include <cstddef>
+#include <functional>
+#include <thread>
+
+// Wait must allow consumer to run: yield, an event-loop wait, or a semaphore.
+// This helper is only for one producer context of this SPSC queue.
+template <std::size_t N, class Queue, class T, class Wait>
+void pushStaged(Queue& queue, const FastQueueBatch<T*>& batch, Wait&& wait) {
+    std::size_t offset = 0;
+    while (offset != N) {
+        const std::size_t moved = queue.template tryPushBatch<N>(batch, offset);
+        if (moved == 0) {
+            std::invoke(wait);       // Full. batch must stay unchanged.
+            continue;
+        }
+        offset += moved;             // Retry only unsent suffix.
+    }
+}
+
+template <class Queue, class T, class Wait>
+void pushCallbackPointers(Queue& queue, T* const* input,
+                          std::size_t count, Wait&& wait) {
+    using Batch = FastQueueBatch<T*>;
+    static_assert(Batch::max_size == 8 || Batch::max_size == 16);
+
+    while (count != 0) {
+        const std::size_t width = std::min(count, Batch::max_size);
+        Batch batch{};               // Caller-owned, producer-local staging.
+        std::copy_n(input, width, batch.items);
+
+        // Width is runtime data at callback boundary; each case is still a
+        // compile-time-specialized queue operation.
+        switch (width) {
+        case 1: pushStaged<1>(queue, batch, wait); break;
+        case 2: pushStaged<2>(queue, batch, wait); break;
+        case 3: pushStaged<3>(queue, batch, wait); break;
+        case 4: pushStaged<4>(queue, batch, wait); break;
+        case 5: pushStaged<5>(queue, batch, wait); break;
+        case 6: pushStaged<6>(queue, batch, wait); break;
+        case 7: pushStaged<7>(queue, batch, wait); break;
+        case 8: pushStaged<8>(queue, batch, wait); break;
+        default:
+            if constexpr (Batch::max_size == 16) {
+                switch (width) {
+                case 9:  pushStaged<9>(queue, batch, wait); break;
+                case 10: pushStaged<10>(queue, batch, wait); break;
+                case 11: pushStaged<11>(queue, batch, wait); break;
+                case 12: pushStaged<12>(queue, batch, wait); break;
+                case 13: pushStaged<13>(queue, batch, wait); break;
+                case 14: pushStaged<14>(queue, batch, wait); break;
+                case 15: pushStaged<15>(queue, batch, wait); break;
+                case 16: pushStaged<16>(queue, batch, wait); break;
+                }
+            }
+            break; // Unreachable: width <= Batch::max_size.
+        }
+
+        input += width;               // Advance only after whole chunk sent.
+        count -= width;
+    }
+}
+```
+
+Example callback, with 23 pointers on any target:
+
+```cpp
+void onJobs(FastQueue<Job*, 1023, 64>& queue, Job* const* jobs,
+            std::size_t jobCount) {
+    pushCallbackPointers(queue, jobs, jobCount, [] {
+        std::this_thread::yield();    // Replace with app wait/backpressure policy.
+    });
+}
+```
+
+For `23`, x86/default ARM sends `8 + 8 + 7`; Apple ARM can send `16 + 7`.
+For callback counts `2, 56, 32, 23, 11, 2, 1, 1, 3, 67`, invoke same helper
+each time. `nullptr` remains valid payload; count, never null termination,
+defines chunk length. If callback cannot wait, use a one-shot variant that
+returns queued count and retain unsent input for a later callback.
+
 Batch payload copy uses only contiguous ring segments. Ring wrap splits into
 prefix/suffix copies, so no copy reads or writes beyond either ring or batch.
 - x86: scalar fallback; AVX2 copies four pointers/vector (two vectors for 8);
