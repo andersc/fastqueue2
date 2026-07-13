@@ -9,8 +9,11 @@
 #include <cstdint>
 #include <atomic>
 #include <cstdlib>
-#include <span>
 #include <utility>
+#include <type_traits>
+#if defined(__aarch64__) || defined(__ARM_NEON)
+#include <arm_neon.h>
+#endif
 
 // FastQueue2 - bounded lock-free SPSC queue for 8-byte objects.
 //
@@ -29,6 +32,16 @@
 #ifndef FQ_ARM_RING_INLINE
 #define FQ_ARM_RING_INLINE 1
 #endif
+
+// Caller-owned payload staging. items contains eight adjacent 8-byte
+// objects: exactly 64 bytes on 64-bit systems. This is payload storage, not a
+// descriptor. Keep producer and consumer batches thread-local.
+template<typename T>
+struct alignas(64) FastQueueBatch {
+    static_assert(sizeof(T) == 8, "FastQueueBatch holds 8-byte objects only");
+    static constexpr std::size_t max_size = 8;
+    T items[max_size];
+};
 
 template<typename T, uint64_t RING_BUFFER_SIZE, uint64_t L1_CACHE_LNE>
 class FastQueue {
@@ -90,10 +103,14 @@ public:
         return true;
     }
 
-    inline std::size_t tryPushBulk(std::span<const T> items) noexcept {
-        const uint64_t requested = items.size() < 8 ? items.size() : 8;
-        if (requested == 0) return 0;
-
+    // Fixed-width cache-line batch API. N is compile-time 1..8. offset permits
+    // retrying unsent/unreceived suffix after a partial nonblocking transfer.
+    template<std::size_t N>
+    inline std::size_t tryPushBatch(const FastQueueBatch<T>& batch,
+                                    std::size_t offset = 0) noexcept {
+        static_assert(N >= 1 && N <= FastQueueBatch<T>::max_size);
+        if (offset >= N) return 0;
+        const uint64_t requested = N - offset;
         const uint64_t w = mWriteIndex.load(std::memory_order_relaxed);
         uint64_t free = CAP - (w - mReadIndexCache);
         if (free < requested) [[unlikely]] {
@@ -102,15 +119,17 @@ public:
             if (free == 0) return 0;
         }
         const uint64_t count = requested < free ? requested : free;
-        copyIntoRing(w, items.data(), count);
+        copyIntoRing(w, batch.items + offset, count);
         mWriteIndex.store(w + count, std::memory_order_release);
         return count;
     }
 
-    inline std::size_t tryPopBulk(std::span<T> output) noexcept {
-        const uint64_t requested = output.size() < 8 ? output.size() : 8;
-        if (requested == 0) return 0;
-
+    template<std::size_t N>
+    inline std::size_t tryPopBatch(FastQueueBatch<T>& batch,
+                                   std::size_t offset = 0) noexcept {
+        static_assert(N >= 1 && N <= FastQueueBatch<T>::max_size);
+        if (offset >= N) return 0;
+        const uint64_t requested = N - offset;
         const uint64_t r = mReadIndex.load(std::memory_order_relaxed);
         uint64_t available = mWriteIndexCache - r;
         if (available < requested) [[unlikely]] {
@@ -119,7 +138,7 @@ public:
             if (available == 0) return 0;
         }
         const uint64_t count = requested < available ? requested : available;
-        copyFromRing(r, output.data(), count);
+        copyFromRing(r, batch.items + offset, count);
         mReadIndex.store(r + count, std::memory_order_release);
         return count;
     }
@@ -157,8 +176,34 @@ private:
     }
 
     static inline void copyContiguous(T* destination, const T* source, uint64_t count) noexcept {
+        // NEON moves two 64-bit pointers per vector. It operates only on a
+        // contiguous segment; copyInto/FromRing split every wrap first.
+        if constexpr (std::is_trivially_copyable_v<T>) {
+#if defined(__aarch64__) || defined(__ARM_NEON)
+            if (count >= 2) {
+                const uint64x2_t a = vld1q_u64(reinterpret_cast<const uint64_t*>(source));
+                vst1q_u64(reinterpret_cast<uint64_t*>(destination), a);
+                if (count == 2) return;
+                if (count >= 4) {
+                    const uint64x2_t b = vld1q_u64(reinterpret_cast<const uint64_t*>(source + 2));
+                    vst1q_u64(reinterpret_cast<uint64_t*>(destination + 2), b);
+                    if (count == 4) return;
+                    if (count >= 6) {
+                        const uint64x2_t c = vld1q_u64(reinterpret_cast<const uint64_t*>(source + 4));
+                        vst1q_u64(reinterpret_cast<uint64_t*>(destination + 4), c);
+                        if (count == 6) return;
+                        if (count == 8) {
+                            const uint64x2_t d = vld1q_u64(reinterpret_cast<const uint64_t*>(source + 6));
+                            vst1q_u64(reinterpret_cast<uint64_t*>(destination + 6), d);
+                            return;
+                        }
+                        destination += 6; source += 6; count -= 6;
+                    } else { destination += 4; source += 4; count -= 4; }
+                } else { destination += 2; source += 2; count -= 2; }
+            }
+#endif
+        }
         switch (count) {
-            case 8: destination[7] = source[7]; [[fallthrough]];
             case 7: destination[6] = source[6]; [[fallthrough]];
             case 6: destination[5] = source[5]; [[fallthrough]];
             case 5: destination[4] = source[4]; [[fallthrough]];

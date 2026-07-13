@@ -156,19 +156,33 @@ See the original FastQueue (the link above).
 
 ## Bulk API
 
-`tryPushBulk` and `tryPopBulk` move up to eight 8-byte objects with one
-release/acquire index publication. Pass `std::span<const T>` to producer and
-`std::span<T>` to consumer. Each returns exact number moved: zero when full or
-empty, partial count when fewer than requested fit or are available. Inputs
-larger than eight are capped at eight; caller owns remainder and retry policy.
+`FastQueueBatch<T>` is caller-owned, `alignas(64)` payload staging containing
+exactly eight adjacent 8-byte objects (64 bytes). This replaces prior
+`std::span` entry points: batch hot calls no longer take pointer-plus-length
+metadata, and `N` is compile-time fixed. Keep one batch per producer/consumer
+work context. `N` is `1..8`; `offset` retries only an unsent/undrained suffix.
 
 ```cpp
-std::array<Job*, 8> jobs;
-const auto pushed = queue.tryPushBulk(jobs);
-const auto popped = queue.tryPopBulk(jobs);
+FastQueueBatch<Job*> jobs{};
+jobs.items[0] = first;
+jobs.items[1] = second;
+
+const auto pushed = queue.tryPushBatch<2>(jobs);
+const auto popped = queue.tryPopBatch<2>(jobs);
 ```
 
-Order is FIFO across scalar and bulk calls. No blocking bulk API exists.
+Each returns exact number moved: zero when full or empty, partial count when
+fewer than requested fit or are available. FIFO holds across scalar and batch
+calls. No blocking batch API exists.
+
+Batch payload copy uses only contiguous ring segments. Ring wrap splits into
+prefix/suffix copies, so no copy reads or writes beyond either ring or batch.
+- x86: scalar fallback; AVX2 copies four pointers/vector (two vectors for 8);
+  AVX-512 copies 8 in one vector only when compiled with `__AVX512F__`.
+- ARM: NEON copies two pointers/vector (four vectors for 8) on AArch64.
+
+SIMD changes payload copy only. Availability remains one index-distance check;
+release/acquire index handoff remains one publication per returned batch.
 
 ## Bulk benchmark results
 
@@ -201,9 +215,10 @@ clang++ -std=c++20 -O3 -DNDEBUG -march=native -pthread -I deaod_spsc -I dro \
 ```
 
 `BULK_BATCH_SIZE=0` selects scalar API. Values `1..8` select fixed FastQueue
-batch size. Bulk copy uses unrolled contiguous prefix/suffix transfers at ring
-wrap. No AVX2, AVX-512, or NEON intrinsic path is enabled: measured gain comes
-from batching index publication; ISA-specific code needs prove a further gain.
+batch size. Bulk copy uses contiguous prefix/suffix transfers at ring wrap.
+Build x86 SIMD variants with `-mavx2` or `-mavx512f` only on CPUs that support
+them; AArch64 builds enable NEON path automatically. Measure each width and ISA
+on target hardware before making throughput claims.
 
 ## Build and run the tests
 

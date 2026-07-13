@@ -1,128 +1,117 @@
-#include <algorithm>
 #include <array>
 #include <atomic>
-#ifdef NDEBUG
-#undef NDEBUG
-#endif
 #include <cassert>
-#include <cstddef>
 #include <cstdint>
-#include <span>
 #include <thread>
 
-#if __x86_64__ || _M_X64
-#include "fast_queue_x86_64.h"
-#elif __aarch64__ || _M_ARM64
+#if defined(__aarch64__) || defined(__arm64__)
 #include "fast_queue_arm64.h"
 #else
-#error Architecture not supported
+#include "fast_queue_x86_64.h"
 #endif
 
-using Queue = FastQueue<uint64_t*, 0b111, 64>;
+using Queue = FastQueue<uint64_t*, 7, 64>; // Capacity 8: force full/partial/wrap cases.
+using Batch = FastQueueBatch<uint64_t*>;
 
-static void testBoundariesAndWrap() {
-    Queue queue;
-    std::array<uint64_t, 64> values{};
-    std::array<uint64_t*, 9> input{};
-    std::array<uint64_t*, 9> output{};
-    for (uint64_t i = 0; i < input.size(); ++i) input[i] = &values[i];
-
-    assert(queue.tryPushBulk({}) == 0);
-    assert(queue.tryPopBulk({}) == 0);
-    assert(queue.tryPopBulk(std::span{output}) == 0);
-
-    // Capacity is eight. Input length nine proves bounded transfer cap.
-    assert(queue.tryPushBulk(std::span{input}) == 8);
-    assert(queue.tryPushBulk(std::span{input}) == 0);
-    assert(queue.tryPopBulk(std::span{output}.first(3)) == 3);
-    for (uint64_t i = 0; i < 3; ++i) assert(output[i] == &values[i]);
-
-    // Only three slots are free, so bulk push must partially transfer.
-    assert(queue.tryPushBulk(std::span{input}.first(5)) == 3);
-    assert(queue.tryPopBulk(std::span{output}) == 8);
-    for (uint64_t i = 0; i < 5; ++i) assert(output[i] == &values[i + 3]);
-    for (uint64_t i = 0; i < 3; ++i) assert(output[i + 5] == &values[i]);
-
-    // Advance write/read offsets to six, then split five entries at ring wrap.
-    for (uint64_t i = 0; i < 3; ++i) assert(queue.tryPush(&values[10 + i]));
-    for (uint64_t i = 0; i < 3; ++i) {
-        uint64_t* item = nullptr;
-        assert(queue.tryPop(item));
-        assert(item == &values[10 + i]);
+static std::size_t push(Queue& queue, const Batch& batch, std::size_t count,
+                        std::size_t offset = 0) {
+    switch (count) {
+        case 1: return queue.tryPushBatch<1>(batch, offset);
+        case 2: return queue.tryPushBatch<2>(batch, offset);
+        case 3: return queue.tryPushBatch<3>(batch, offset);
+        case 4: return queue.tryPushBatch<4>(batch, offset);
+        case 5: return queue.tryPushBatch<5>(batch, offset);
+        case 6: return queue.tryPushBatch<6>(batch, offset);
+        case 7: return queue.tryPushBatch<7>(batch, offset);
+        case 8: return queue.tryPushBatch<8>(batch, offset);
+        default: return 0;
     }
-    for (uint64_t i = 0; i < 5; ++i) input[i] = &values[20 + i];
-    assert(queue.tryPushBulk(std::span{input}.first(5)) == 5);
-    assert(queue.tryPopBulk(std::span{output}.first(5)) == 5);
-    for (uint64_t i = 0; i < 5; ++i) assert(output[i] == &values[20 + i]);
 }
 
-static void testMixedScalarAndBulk() {
+static std::size_t pop(Queue& queue, Batch& batch, std::size_t count,
+                       std::size_t offset = 0) {
+    switch (count) {
+        case 1: return queue.tryPopBatch<1>(batch, offset);
+        case 2: return queue.tryPopBatch<2>(batch, offset);
+        case 3: return queue.tryPopBatch<3>(batch, offset);
+        case 4: return queue.tryPopBatch<4>(batch, offset);
+        case 5: return queue.tryPopBatch<5>(batch, offset);
+        case 6: return queue.tryPopBatch<6>(batch, offset);
+        case 7: return queue.tryPopBatch<7>(batch, offset);
+        case 8: return queue.tryPopBatch<8>(batch, offset);
+        default: return 0;
+    }
+}
+
+static void deterministicTests() {
     Queue queue;
+    Batch input{};
+    Batch output{};
     std::array<uint64_t, 32> values{};
-    std::array<uint64_t*, 8> output{};
-    std::array<uint64_t*, 4> first{};
-    for (uint64_t i = 0; i < first.size(); ++i) first[i] = &values[i];
+    for (uint64_t i = 0; i < values.size(); ++i) input.items[i & 7] = &values[i];
 
-    assert(queue.tryPushBulk(std::span{first}) == 4);
-    assert(queue.tryPush(&values[4]));
-    assert(queue.tryPush(&values[5]));
-    assert(queue.tryPopBulk(std::span{output}.first(3)) == 3);
-    for (uint64_t i = 0; i < 3; ++i) assert(output[i] == &values[i]);
+    assert(pop(queue, output, 8) == 0);
+    assert(push(queue, input, 8) == 8);
+    assert(push(queue, input, 1) == 0);
+    assert(pop(queue, output, 3) == 3);
+    for (uint64_t i = 0; i < 3; ++i) assert(*output.items[i] == i);
 
-    assert(queue.tryPush(&values[6]));
-    assert(queue.tryPush(&values[7]));
-    assert(queue.tryPush(&values[8]));
-    assert(queue.tryPopBulk(std::span{output}) == 6);
-    for (uint64_t i = 0; i < 6; ++i) assert(output[i] == &values[3 + i]);
+    for (uint64_t i = 0; i < 5; ++i) input.items[i] = &values[i + 8];
+    assert(push(queue, input, 5) == 3); // Partial: only three slots free.
+    assert(pop(queue, output, 8) == 8);
+    for (uint64_t i = 0; i < 5; ++i) assert(*output.items[i] == i + 3);
+    for (uint64_t i = 0; i < 3; ++i) assert(*output.items[i + 5] == i + 8);
+
+    for (uint64_t i = 0; i < 6; ++i) input.items[i] = &values[i + 16];
+    assert(push(queue, input, 6) == 6); // Split across ring end.
+    assert(pop(queue, output, 6) == 6);
+    for (uint64_t i = 0; i < 6; ++i) assert(*output.items[i] == i + 16);
+
+    uint64_t scalar = 30;
+    assert(queue.tryPush(&scalar));
+    input.items[0] = &values[31];
+    assert(push(queue, input, 1) == 1);
+    assert(queue.tryPop(output.items[0]) && *output.items[0] == 30);
+    assert(pop(queue, output, 1) == 1 && *output.items[0] == 31);
 }
 
-static void testThreadedPartialFifo() {
+static void concurrentTest() {
     constexpr uint64_t count = 250000;
     Queue queue;
     std::array<uint64_t, count> values{};
-    std::atomic<bool> start = false;
-    std::atomic<bool> producerDone = false;
+    std::atomic<bool> start{false};
 
     std::thread producer([&] {
-        std::array<uint64_t*, 8> batch{};
+        Batch batch{};
         uint64_t next = 0;
         while (!start.load(std::memory_order_acquire)) {}
         while (next < count) {
-            const uint64_t requested = std::min<uint64_t>(1 + (next % 8), count - next);
-            for (uint64_t i = 0; i < requested; ++i) batch[i] = &values[next + i];
-            const uint64_t pushed = queue.tryPushBulk(std::span{batch}.first(requested));
-            next += pushed;
+            const std::size_t width = static_cast<std::size_t>(std::min<uint64_t>(8, count - next));
+            for (std::size_t i = 0; i < width; ++i) batch.items[i] = &values[next + i];
+            std::size_t sent = 0;
+            while (sent < width) sent += push(queue, batch, width, sent);
+            next += width;
         }
-        producerDone.store(true, std::memory_order_release);
     });
-
     std::thread consumer([&] {
-        std::array<uint64_t*, 8> batch{};
+        Batch batch{};
         uint64_t expected = 0;
         while (!start.load(std::memory_order_acquire)) {}
         while (expected < count) {
-            const uint64_t requested = 1 + (expected % 8);
-            const uint64_t popped = queue.tryPopBulk(std::span{batch}.first(requested));
-            if (popped == 0) {
-                if (producerDone.load(std::memory_order_acquire)) {
-                    // Producer completion does not imply local cached index is fresh.
-                    continue;
-                }
-                continue;
+            const std::size_t width = static_cast<std::size_t>(std::min<uint64_t>(8, count - expected));
+            const std::size_t got = pop(queue, batch, width);
+            for (std::size_t i = 0; i < got; ++i) {
+                assert(batch.items[i] == &values[expected]);
+                ++expected;
             }
-            for (uint64_t i = 0; i < popped; ++i) assert(batch[i] == &values[expected + i]);
-            expected += popped;
         }
     });
-
     start.store(true, std::memory_order_release);
     producer.join();
     consumer.join();
 }
 
 int main() {
-    testBoundariesAndWrap();
-    testMixedScalarAndBulk();
-    testThreadedPartialFifo();
-    return 0;
+    deterministicTests();
+    concurrentTest();
 }

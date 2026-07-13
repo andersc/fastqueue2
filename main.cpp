@@ -197,8 +197,41 @@ static RunResult runDeaod(bool pooled) {
                   [](auto&) {}, pooled);
 }
 
+using FastQueueType = FastQueue<MyObject*, QUEUE_MASK, L1_CACHE_LINE>;
+using FastBatch = FastQueueBatch<MyObject*>;
+
+static std::size_t pushBatch(FastQueueType& queue, const FastBatch& batch,
+                             std::size_t width, std::size_t offset = 0) {
+    switch (width) {
+        case 1: return queue.tryPushBatch<1>(batch, offset);
+        case 2: return queue.tryPushBatch<2>(batch, offset);
+        case 3: return queue.tryPushBatch<3>(batch, offset);
+        case 4: return queue.tryPushBatch<4>(batch, offset);
+        case 5: return queue.tryPushBatch<5>(batch, offset);
+        case 6: return queue.tryPushBatch<6>(batch, offset);
+        case 7: return queue.tryPushBatch<7>(batch, offset);
+        case 8: return queue.tryPushBatch<8>(batch, offset);
+        default: return 0;
+    }
+}
+
+static std::size_t popBatch(FastQueueType& queue, FastBatch& batch,
+                            std::size_t width, std::size_t offset = 0) {
+    switch (width) {
+        case 1: return queue.tryPopBatch<1>(batch, offset);
+        case 2: return queue.tryPopBatch<2>(batch, offset);
+        case 3: return queue.tryPopBatch<3>(batch, offset);
+        case 4: return queue.tryPopBatch<4>(batch, offset);
+        case 5: return queue.tryPopBatch<5>(batch, offset);
+        case 6: return queue.tryPopBatch<6>(batch, offset);
+        case 7: return queue.tryPopBatch<7>(batch, offset);
+        case 8: return queue.tryPopBatch<8>(batch, offset);
+        default: return 0;
+    }
+}
+
 static RunResult runFast(bool pooled) {
-    FastQueue<MyObject*, QUEUE_MASK, L1_CACHE_LINE> queue;
+    FastQueueType queue;
 #if BULK_BATCH_SIZE == 0
     return runOne(queue,
                   [](auto& q, auto* object) { while (!q.tryPush(object)) {} },
@@ -210,15 +243,15 @@ static RunResult runFast(bool pooled) {
 
     std::thread consumer([&] {
         if (!pinThread(CONSUMER_CPU)) { control.pinFailed.store(true); return; }
-        std::array<MyObject*, BULK_BATCH_SIZE> batch{};
+        FastBatch batch{};
         uint64_t expected = 0;
         waitStart(control);
         while (expected < TRANSFER_COUNT) {
             const auto requested = static_cast<std::size_t>(std::min<uint64_t>(BULK_BATCH_SIZE, TRANSFER_COUNT - expected));
-            const auto popped = queue.tryPopBulk(std::span{batch}.first(requested));
+            const auto popped = popBatch(queue, batch, requested);
             for (std::size_t i = 0; i < popped; ++i) {
-                verify(batch[i], expected++);
-                freeObj(pooled, batch[i]);
+                verify(batch.items[i], expected++);
+                freeObj(pooled, batch.items[i]);
             }
         }
         consumed.store(TRANSFER_COUNT, std::memory_order_relaxed);
@@ -226,7 +259,7 @@ static RunResult runFast(bool pooled) {
 
     std::thread producer([&] {
         if (!pinThread(PRODUCER_CPU)) { control.pinFailed.store(true); return; }
-        std::array<MyObject*, BULK_BATCH_SIZE> batch{};
+        FastBatch batch{};
         uint64_t produced = 0;
         waitStart(control);
         while (produced < TRANSFER_COUNT) {
@@ -234,11 +267,11 @@ static RunResult runFast(bool pooled) {
             for (std::size_t i = 0; i < requested; ++i) {
                 auto* object = allocObj(pooled, produced + i);
                 object->mIndex = produced + i;
-                batch[i] = object;
+                batch.items[i] = object;
             }
             std::size_t sent = 0;
             while (sent < requested) {
-                sent += queue.tryPushBulk(std::span{batch}.subspan(sent, requested - sent));
+                sent += pushBatch(queue, batch, requested, sent);
             }
             produced += requested;
         }

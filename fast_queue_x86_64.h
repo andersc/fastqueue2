@@ -9,8 +9,11 @@
 #include <atomic>
 #include <cstdint>
 #include <iostream>
-#include <span>
 #include <utility>
+#include <type_traits>
+#if defined(__AVX2__) || defined(__AVX512F__)
+#include <immintrin.h>
+#endif
 
 // FastQueue2 - bounded lock-free SPSC queue for 8-byte objects.
 //
@@ -68,6 +71,16 @@
 #ifndef FQ_CTL_ALIGN
 #define FQ_CTL_ALIGN (L1_CACHE_LNE * 2)
 #endif
+
+// Caller-owned payload staging. items contains eight adjacent 8-byte
+// objects: exactly 64 bytes on 64-bit systems. This is payload storage, not a
+// descriptor. Keep producer and consumer batches thread-local.
+template<typename T>
+struct alignas(64) FastQueueBatch {
+    static_assert(sizeof(T) == 8, "FastQueueBatch holds 8-byte objects only");
+    static constexpr std::size_t max_size = 8;
+    T items[max_size];
+};
 
 template<typename T, uint64_t RING_BUFFER_SIZE, uint64_t L1_CACHE_LNE>
 class FastQueue {
@@ -153,10 +166,14 @@ public:
         return true;
     }
 
-    inline std::size_t tryPushBulk(std::span<const T> items) noexcept {
-        const uint64_t requested = items.size() < 8 ? items.size() : 8;
-        if (requested == 0) return 0;
-
+    // Fixed-width cache-line batch API. N is compile-time 1..8. offset permits
+    // retrying unsent/unreceived suffix after a partial nonblocking transfer.
+    template<std::size_t N>
+    inline std::size_t tryPushBatch(const FastQueueBatch<T>& batch,
+                                    std::size_t offset = 0) noexcept {
+        static_assert(N >= 1 && N <= FastQueueBatch<T>::max_size);
+        if (offset >= N) return 0;
+        const uint64_t requested = N - offset;
         const uint64_t w = mWriteIndex.load(std::memory_order_relaxed);
         uint64_t free = CAP - distance(w, mReadIndexCache);
         if (free < requested) [[unlikely]] {
@@ -165,15 +182,17 @@ public:
             if (free == 0) return 0;
         }
         const uint64_t count = requested < free ? requested : free;
-        copyIntoRing(w, items.data(), count);
+        copyIntoRing(w, batch.items + offset, count);
         mWriteIndex.store(advanceIndex(w, count), std::memory_order_release);
         return count;
     }
 
-    inline std::size_t tryPopBulk(std::span<T> output) noexcept {
-        const uint64_t requested = output.size() < 8 ? output.size() : 8;
-        if (requested == 0) return 0;
-
+    template<std::size_t N>
+    inline std::size_t tryPopBatch(FastQueueBatch<T>& batch,
+                                   std::size_t offset = 0) noexcept {
+        static_assert(N >= 1 && N <= FastQueueBatch<T>::max_size);
+        if (offset >= N) return 0;
+        const uint64_t requested = N - offset;
         const uint64_t r = mReadIndex.load(std::memory_order_relaxed);
         uint64_t available = distance(mWriteIndexCache, r);
         if (available < requested) [[unlikely]] {
@@ -182,7 +201,7 @@ public:
             if (available == 0) return 0;
         }
         const uint64_t count = requested < available ? requested : available;
-        copyFromRing(r, output.data(), count);
+        copyFromRing(r, batch.items + offset, count);
         mReadIndex.store(advanceIndex(r, count), std::memory_order_release);
         return count;
     }
@@ -221,10 +240,36 @@ private:
     }
 
     static inline void copyContiguous(T* destination, const T* source, uint64_t count) noexcept {
-        // Bounded 1..8 transfer. Explicit cases avoid loop/index-mask work in
-        // hot batch path; no ISA-specific vector code until measurements justify it.
+        // SIMD only touches fully contiguous source/destination segments. Ring
+        // wrap remains split before this function, so no vector crosses ring or
+        // caller-batch bounds. AVX-512 handles eight pointers; AVX2 handles two
+        // four-pointer chunks. Builds without ISA flags retain scalar path.
+        if constexpr (std::is_trivially_copyable_v<T>) {
+#if defined(__AVX512F__)
+            if (count == 8) {
+                const __m512i values = _mm512_loadu_si512(static_cast<const void*>(source));
+                _mm512_storeu_si512(static_cast<void*>(destination), values);
+                return;
+            }
+#elif defined(__AVX2__)
+            if (count >= 4) {
+                const __m256i first = _mm256_loadu_si256(
+                    reinterpret_cast<const __m256i*>(source));
+                _mm256_storeu_si256(reinterpret_cast<__m256i*>(destination), first);
+                if (count == 4) return;
+                if (count == 8) {
+                    const __m256i second = _mm256_loadu_si256(
+                        reinterpret_cast<const __m256i*>(source + 4));
+                    _mm256_storeu_si256(reinterpret_cast<__m256i*>(destination + 4), second);
+                    return;
+                }
+                destination += 4;
+                source += 4;
+                count -= 4;
+            }
+#endif
+        }
         switch (count) {
-            case 8: destination[7] = source[7]; [[fallthrough]];
             case 7: destination[6] = source[6]; [[fallthrough]];
             case 6: destination[5] = source[5]; [[fallthrough]];
             case 5: destination[4] = source[4]; [[fallthrough]];
