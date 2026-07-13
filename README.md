@@ -304,6 +304,17 @@ validation, and uses fixed transfer count, joined producer/consumer workers,
 start gate, 12 solo rounds, and median result. It is not a four-queue comparison:
 Deaod, Dro, and David V5 have no matching bulk APIs.
 
+### Measurement policy
+
+Transfer count is timed pointer items per round, not queue capacity or a
+throughput limit. Short runs (for example 5M transfers) screen widths quickly;
+longer runs (for example 100M transfers) confirm selected results with less
+noise. Existing rows are not all one count: M5 width screening used 30M/9 rounds,
+while M5 and listed Linux confirmations use 100M/12 rounds. Fixed counts trade
+benchmark runtime against scheduler, frequency, and thermal noise. For very fast
+queues, target at least 100–500 ms per timed sample and scale transfer count to
+match expected items/s.
+
 ### Measured width sweep
 
 | CPU / OS | Build / pinning | Scalar mode | Best fixed width | Best median | Gain vs scalar mode* |
