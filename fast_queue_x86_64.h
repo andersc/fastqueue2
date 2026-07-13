@@ -5,10 +5,15 @@
 #pragma once
 
 #include <array>
+#include <algorithm>
 #include <atomic>
 #include <cstdint>
 #include <iostream>
 #include <utility>
+#include <type_traits>
+#if defined(__AVX2__) || defined(__AVX512F__)
+#include <immintrin.h>
+#endif
 
 // FastQueue2 - bounded lock-free SPSC queue for 8-byte objects.
 //
@@ -66,6 +71,16 @@
 #ifndef FQ_CTL_ALIGN
 #define FQ_CTL_ALIGN (L1_CACHE_LNE * 2)
 #endif
+
+// Caller-owned payload staging. items contains eight adjacent 8-byte
+// objects: exactly 64 bytes on 64-bit systems. This is payload storage, not a
+// descriptor. Keep producer and consumer batches thread-local.
+template<typename T>
+struct alignas(64) FastQueueBatch {
+    static_assert(sizeof(T) == 8, "FastQueueBatch holds 8-byte objects only");
+    static constexpr std::size_t max_size = 8;
+    T items[max_size];
+};
 
 template<typename T, uint64_t RING_BUFFER_SIZE, uint64_t L1_CACHE_LNE>
 class FastQueue {
@@ -129,6 +144,68 @@ public:
         mReadIndex.store(nextIndex(r), std::memory_order_release);
     }
 
+    inline bool tryPush(const T& item) noexcept {
+        const uint64_t w = mWriteIndex.load(std::memory_order_relaxed);
+        if (distance(w, mReadIndexCache) >= CAP) [[unlikely]] {
+            mReadIndexCache = mReadIndex.load(std::memory_order_acquire);
+            if (distance(w, mReadIndexCache) >= CAP) return false;
+        }
+        mRingBuffer[w & MASK] = item;
+        mWriteIndex.store(nextIndex(w), std::memory_order_release);
+        return true;
+    }
+
+    inline bool tryPop(T& output) noexcept {
+        const uint64_t r = mReadIndex.load(std::memory_order_relaxed);
+        if (r == mWriteIndexCache) [[unlikely]] {
+            mWriteIndexCache = mWriteIndex.load(std::memory_order_acquire);
+            if (r == mWriteIndexCache) return false;
+        }
+        output = mRingBuffer[r & MASK];
+        mReadIndex.store(nextIndex(r), std::memory_order_release);
+        return true;
+    }
+
+    // Fixed-width cache-line batch API. N is compile-time 1..8. offset permits
+    // retrying unsent/unreceived suffix after a partial nonblocking transfer.
+    template<std::size_t N>
+    inline std::size_t tryPushBatch(const FastQueueBatch<T>& batch,
+                                    std::size_t offset = 0) noexcept {
+        static_assert(N >= 1 && N <= FastQueueBatch<T>::max_size);
+        if (offset >= N) return 0;
+        const uint64_t requested = N - offset;
+        const uint64_t w = mWriteIndex.load(std::memory_order_relaxed);
+        uint64_t free = CAP - distance(w, mReadIndexCache);
+        if (free < requested) [[unlikely]] {
+            mReadIndexCache = mReadIndex.load(std::memory_order_acquire);
+            free = CAP - distance(w, mReadIndexCache);
+            if (free == 0) return 0;
+        }
+        const uint64_t count = requested < free ? requested : free;
+        copyIntoRing(w, batch.items + offset, count);
+        mWriteIndex.store(advanceIndex(w, count), std::memory_order_release);
+        return count;
+    }
+
+    template<std::size_t N>
+    inline std::size_t tryPopBatch(FastQueueBatch<T>& batch,
+                                   std::size_t offset = 0) noexcept {
+        static_assert(N >= 1 && N <= FastQueueBatch<T>::max_size);
+        if (offset >= N) return 0;
+        const uint64_t requested = N - offset;
+        const uint64_t r = mReadIndex.load(std::memory_order_relaxed);
+        uint64_t available = distance(mWriteIndexCache, r);
+        if (available < requested) [[unlikely]] {
+            mWriteIndexCache = mWriteIndex.load(std::memory_order_acquire);
+            available = distance(mWriteIndexCache, r);
+            if (available == 0) return 0;
+        }
+        const uint64_t count = requested < available ? requested : available;
+        copyFromRing(r, batch.items + offset, count);
+        mReadIndex.store(advanceIndex(r, count), std::memory_order_release);
+        return count;
+    }
+
     // Stop may be called by any thread. Consumer drains all published entries.
     void stopQueue() noexcept {
         mExitThreadSemaphore.store(true, std::memory_order_release);
@@ -152,6 +229,70 @@ private:
 #else
         return index + 1;
 #endif
+    }
+
+    static constexpr uint64_t advanceIndex(uint64_t index, uint64_t count) noexcept {
+#if FQ_WRAPPED_INDICES
+        return (index + count) & INDEX_WRAP_MASK;
+#else
+        return index + count;
+#endif
+    }
+
+    static inline void copyContiguous(T* destination, const T* source, uint64_t count) noexcept {
+        // SIMD only touches fully contiguous source/destination segments. Ring
+        // wrap remains split before this function, so no vector crosses ring or
+        // caller-batch bounds. AVX-512 handles eight pointers; AVX2 handles two
+        // four-pointer chunks. Builds without ISA flags retain scalar path.
+        if constexpr (std::is_trivially_copyable_v<T>) {
+#if defined(__AVX512F__)
+            if (count == 8) {
+                const __m512i values = _mm512_loadu_si512(static_cast<const void*>(source));
+                _mm512_storeu_si512(static_cast<void*>(destination), values);
+                return;
+            }
+#elif defined(__AVX2__)
+            if (count >= 4) {
+                const __m256i first = _mm256_loadu_si256(
+                    reinterpret_cast<const __m256i*>(source));
+                _mm256_storeu_si256(reinterpret_cast<__m256i*>(destination), first);
+                if (count == 4) return;
+                if (count == 8) {
+                    const __m256i second = _mm256_loadu_si256(
+                        reinterpret_cast<const __m256i*>(source + 4));
+                    _mm256_storeu_si256(reinterpret_cast<__m256i*>(destination + 4), second);
+                    return;
+                }
+                destination += 4;
+                source += 4;
+                count -= 4;
+            }
+#endif
+        }
+        switch (count) {
+            case 7: destination[6] = source[6]; [[fallthrough]];
+            case 6: destination[5] = source[5]; [[fallthrough]];
+            case 5: destination[4] = source[4]; [[fallthrough]];
+            case 4: destination[3] = source[3]; [[fallthrough]];
+            case 3: destination[2] = source[2]; [[fallthrough]];
+            case 2: destination[1] = source[1]; [[fallthrough]];
+            case 1: destination[0] = source[0]; [[fallthrough]];
+            default: return;
+        }
+    }
+
+    void copyIntoRing(uint64_t index, const T* input, uint64_t count) noexcept {
+        const uint64_t offset = index & MASK;
+        const uint64_t first = std::min(count, CAP - offset);
+        copyContiguous(mRingBuffer.data() + offset, input, first);
+        copyContiguous(mRingBuffer.data(), input + first, count - first);
+    }
+
+    void copyFromRing(uint64_t index, T* output, uint64_t count) noexcept {
+        const uint64_t offset = index & MASK;
+        const uint64_t first = std::min(count, CAP - offset);
+        copyContiguous(output, mRingBuffer.data() + offset, first);
+        copyContiguous(output + first, mRingBuffer.data(), count - first);
     }
 
     static constexpr uint64_t distance(uint64_t newer, uint64_t older) noexcept {

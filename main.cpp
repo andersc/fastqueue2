@@ -50,9 +50,12 @@ class MyObject { public: uint64_t mIndex; };
 #define HEAP_ONLY 0
 #endif
 static_assert(!(POOLED_ONLY && HEAP_ONLY), "Select at most one payload mode");
-#ifndef SOLO_QUEUE
-#define SOLO_QUEUE 0
+#ifndef BULK_BATCH_SIZE
+#define BULK_BATCH_SIZE 0
 #endif
+static_assert(BULK_BATCH_SIZE >= 0 &&
+              BULK_BATCH_SIZE <= static_cast<int>(FastQueueBatch<MyObject*>::max_size),
+              "BULK_BATCH_SIZE exceeds FastQueueBatch target cache-line capacity");
 
 static constexpr uint32_t POOL_SZ = 1u << 16;
 static MyObject gPool[POOL_SZ];
@@ -195,12 +198,131 @@ static RunResult runDeaod(bool pooled) {
                   [](auto&) {}, pooled);
 }
 
+using FastQueueType = FastQueue<MyObject*, QUEUE_MASK, L1_CACHE_LINE>;
+using FastBatch = FastQueueBatch<MyObject*>;
+
+// Batch width N is a compile-time template on the queue, but valid N is bounded by
+// the target batch capacity (8 on x86 / 64-byte-line AArch64, up to 16 on Apple
+// Silicon). Guard each case so widths above the target capacity fold to a no-op
+// instead of instantiating tryPush/PopBatch<N> and tripping its static_assert.
+// Without this guard the switch's 9..16 cases fail to compile on x86.
+template<std::size_t N>
+static std::size_t pushBatchN(FastQueueType& queue, const FastBatch& batch, std::size_t offset) {
+    if constexpr (N >= 1 && N <= FastBatch::max_size) return queue.tryPushBatch<N>(batch, offset);
+    else return 0;
+}
+template<std::size_t N>
+static std::size_t popBatchN(FastQueueType& queue, FastBatch& batch, std::size_t offset) {
+    if constexpr (N >= 1 && N <= FastBatch::max_size) return queue.tryPopBatch<N>(batch, offset);
+    else return 0;
+}
+
+static std::size_t pushBatch(FastQueueType& queue, const FastBatch& batch,
+                             std::size_t width, std::size_t offset = 0) {
+    switch (width) {
+        case 1: return pushBatchN<1>(queue, batch, offset);
+        case 2: return pushBatchN<2>(queue, batch, offset);
+        case 3: return pushBatchN<3>(queue, batch, offset);
+        case 4: return pushBatchN<4>(queue, batch, offset);
+        case 5: return pushBatchN<5>(queue, batch, offset);
+        case 6: return pushBatchN<6>(queue, batch, offset);
+        case 7: return pushBatchN<7>(queue, batch, offset);
+        case 8: return pushBatchN<8>(queue, batch, offset);
+        case 9: return pushBatchN<9>(queue, batch, offset);
+        case 10: return pushBatchN<10>(queue, batch, offset);
+        case 11: return pushBatchN<11>(queue, batch, offset);
+        case 12: return pushBatchN<12>(queue, batch, offset);
+        case 13: return pushBatchN<13>(queue, batch, offset);
+        case 14: return pushBatchN<14>(queue, batch, offset);
+        case 15: return pushBatchN<15>(queue, batch, offset);
+        case 16: return pushBatchN<16>(queue, batch, offset);
+        default: return 0;
+    }
+}
+
+static std::size_t popBatch(FastQueueType& queue, FastBatch& batch,
+                            std::size_t width, std::size_t offset = 0) {
+    switch (width) {
+        case 1: return popBatchN<1>(queue, batch, offset);
+        case 2: return popBatchN<2>(queue, batch, offset);
+        case 3: return popBatchN<3>(queue, batch, offset);
+        case 4: return popBatchN<4>(queue, batch, offset);
+        case 5: return popBatchN<5>(queue, batch, offset);
+        case 6: return popBatchN<6>(queue, batch, offset);
+        case 7: return popBatchN<7>(queue, batch, offset);
+        case 8: return popBatchN<8>(queue, batch, offset);
+        case 9: return popBatchN<9>(queue, batch, offset);
+        case 10: return popBatchN<10>(queue, batch, offset);
+        case 11: return popBatchN<11>(queue, batch, offset);
+        case 12: return popBatchN<12>(queue, batch, offset);
+        case 13: return popBatchN<13>(queue, batch, offset);
+        case 14: return popBatchN<14>(queue, batch, offset);
+        case 15: return popBatchN<15>(queue, batch, offset);
+        case 16: return popBatchN<16>(queue, batch, offset);
+        default: return 0;
+    }
+}
+
 static RunResult runFast(bool pooled) {
-    FastQueue<MyObject*, QUEUE_MASK, L1_CACHE_LINE> queue;
+    FastQueueType queue;
+#if BULK_BATCH_SIZE == 0
     return runOne(queue,
                   [](auto& q, auto* object) { while (!q.tryPush(object)) {} },
                   [](auto& q, auto*& object) { while (!q.tryPop(object)) {} },
                   [](auto& q) { q.stopQueue(); }, pooled);
+#else
+    RunControl control;
+    std::atomic<uint64_t> consumed{0};
+
+    std::thread consumer([&] {
+        if (!pinThread(CONSUMER_CPU)) { control.pinFailed.store(true); return; }
+        FastBatch batch{};
+        uint64_t expected = 0;
+        waitStart(control);
+        while (expected < TRANSFER_COUNT) {
+            const auto requested = static_cast<std::size_t>(std::min<uint64_t>(BULK_BATCH_SIZE, TRANSFER_COUNT - expected));
+            const auto popped = popBatch(queue, batch, requested);
+            for (std::size_t i = 0; i < popped; ++i) {
+                verify(batch.items[i], expected++);
+                freeObj(pooled, batch.items[i]);
+            }
+        }
+        consumed.store(TRANSFER_COUNT, std::memory_order_relaxed);
+    });
+
+    std::thread producer([&] {
+        if (!pinThread(PRODUCER_CPU)) { control.pinFailed.store(true); return; }
+        FastBatch batch{};
+        uint64_t produced = 0;
+        waitStart(control);
+        while (produced < TRANSFER_COUNT) {
+            const auto requested = static_cast<std::size_t>(std::min<uint64_t>(BULK_BATCH_SIZE, TRANSFER_COUNT - produced));
+            for (std::size_t i = 0; i < requested; ++i) {
+                auto* object = allocObj(pooled, produced + i);
+                object->mIndex = produced + i;
+                batch.items[i] = object;
+            }
+            std::size_t sent = 0;
+            while (sent < requested) {
+                sent += pushBatch(queue, batch, requested, sent);
+            }
+            produced += requested;
+        }
+        queue.stopQueue();
+    });
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    const auto begin = std::chrono::steady_clock::now();
+    control.start.store(true, std::memory_order_release);
+    producer.join();
+    consumer.join();
+    const auto end = std::chrono::steady_clock::now();
+    if (control.pinFailed.load() || consumed.load(std::memory_order_relaxed) != TRANSFER_COUNT) {
+        std::cerr << "Pin or transfer failed. Pick valid distinct CPU IDs.\n";
+        std::terminate();
+    }
+    return {.operationsPerSecond = TRANSFER_COUNT / std::chrono::duration<double>(end - begin).count()};
+#endif
 }
 
 static RunResult runDavid(bool pooled) {

@@ -5,10 +5,15 @@
 #pragma once
 
 #include <array>
+#include <algorithm>
 #include <cstdint>
 #include <atomic>
 #include <cstdlib>
 #include <utility>
+#include <type_traits>
+#if defined(__aarch64__) || defined(__ARM_NEON)
+#include <arm_neon.h>
+#endif
 
 // FastQueue2 - bounded lock-free SPSC queue for 8-byte objects.
 //
@@ -27,6 +32,26 @@
 #ifndef FQ_ARM_RING_INLINE
 #define FQ_ARM_RING_INLINE 1
 #endif
+
+// Caller-owned payload staging. Batch width follows target L1 cache-line
+// size: Apple Silicon has 128-byte lines (16 pointers); common AArch64 Linux
+// targets use 64-byte lines (8 pointers). Override FQ_ARM_BATCH_BYTES only
+// after verifying target line size. Keep producer/consumer batches thread-local.
+#ifndef FQ_ARM_BATCH_BYTES
+# if defined(__APPLE__)
+#  define FQ_ARM_BATCH_BYTES 128
+# else
+#  define FQ_ARM_BATCH_BYTES 64
+# endif
+#endif
+static_assert(FQ_ARM_BATCH_BYTES >= 64 && (FQ_ARM_BATCH_BYTES % 64) == 0,
+              "FQ_ARM_BATCH_BYTES must be a multiple of 64");
+template<typename T>
+struct alignas(FQ_ARM_BATCH_BYTES) FastQueueBatch {
+    static_assert(sizeof(T) == 8, "FastQueueBatch holds 8-byte objects only");
+    static constexpr std::size_t max_size = FQ_ARM_BATCH_BYTES / sizeof(T);
+    T items[max_size];
+};
 
 template<typename T, uint64_t RING_BUFFER_SIZE, uint64_t L1_CACHE_LNE>
 class FastQueue {
@@ -88,6 +113,46 @@ public:
         return true;
     }
 
+    // Fixed-width cache-line batch API. N is compile-time 1..8. offset permits
+    // retrying unsent/unreceived suffix after a partial nonblocking transfer.
+    template<std::size_t N>
+    inline std::size_t tryPushBatch(const FastQueueBatch<T>& batch,
+                                    std::size_t offset = 0) noexcept {
+        static_assert(N >= 1 && N <= FastQueueBatch<T>::max_size);
+        if (offset >= N) return 0;
+        const uint64_t requested = N - offset;
+        const uint64_t w = mWriteIndex.load(std::memory_order_relaxed);
+        uint64_t free = CAP - (w - mReadIndexCache);
+        if (free < requested) [[unlikely]] {
+            mReadIndexCache = mReadIndex.load(std::memory_order_acquire);
+            free = CAP - (w - mReadIndexCache);
+            if (free == 0) return 0;
+        }
+        const uint64_t count = requested < free ? requested : free;
+        copyIntoRing(w, batch.items + offset, count);
+        mWriteIndex.store(w + count, std::memory_order_release);
+        return count;
+    }
+
+    template<std::size_t N>
+    inline std::size_t tryPopBatch(FastQueueBatch<T>& batch,
+                                   std::size_t offset = 0) noexcept {
+        static_assert(N >= 1 && N <= FastQueueBatch<T>::max_size);
+        if (offset >= N) return 0;
+        const uint64_t requested = N - offset;
+        const uint64_t r = mReadIndex.load(std::memory_order_relaxed);
+        uint64_t available = mWriteIndexCache - r;
+        if (available < requested) [[unlikely]] {
+            mWriteIndexCache = mWriteIndex.load(std::memory_order_acquire);
+            available = mWriteIndexCache - r;
+            if (available == 0) return 0;
+        }
+        const uint64_t count = requested < available ? requested : available;
+        copyFromRing(r, batch.items + offset, count);
+        mReadIndex.store(r + count, std::memory_order_release);
+        return count;
+    }
+
     template<typename... Args>
     inline void push(Args&&... args) noexcept {
         while (!tryPush(std::forward<Args>(args)...)) {
@@ -117,6 +182,56 @@ private:
         return mRingBuffer[index & MASK];
 #else
         return mRingBuffer[index & MASK];
+#endif
+    }
+
+    static inline void copyContiguous(T* destination, const T* source, uint64_t count) noexcept {
+        // NEON moves two 64-bit pointers per vector. It operates only on a
+        // contiguous segment; copyInto/FromRing split every wrap first.
+        if constexpr (std::is_trivially_copyable_v<T>) {
+#if defined(__aarch64__) || defined(__ARM_NEON)
+            // Two pointers per NEON register. Handles 64-byte and Apple
+            // 128-byte batch payloads without crossing split wrap segments.
+            while (count >= 2) {
+                const uint64x2_t value = vld1q_u64(reinterpret_cast<const uint64_t*>(source));
+                vst1q_u64(reinterpret_cast<uint64_t*>(destination), value);
+                destination += 2;
+                source += 2;
+                count -= 2;
+            }
+#endif
+        }
+        switch (count) {
+            case 7: destination[6] = source[6]; [[fallthrough]];
+            case 6: destination[5] = source[5]; [[fallthrough]];
+            case 5: destination[4] = source[4]; [[fallthrough]];
+            case 4: destination[3] = source[3]; [[fallthrough]];
+            case 3: destination[2] = source[2]; [[fallthrough]];
+            case 2: destination[1] = source[1]; [[fallthrough]];
+            case 1: destination[0] = source[0]; [[fallthrough]];
+            default: return;
+        }
+    }
+
+    void copyIntoRing(uint64_t index, const T* input, uint64_t count) noexcept {
+        const uint64_t offset = index & MASK;
+        const uint64_t first = std::min(count, CAP - offset);
+        copyContiguous(ringData() + offset, input, first);
+        copyContiguous(ringData(), input + first, count - first);
+    }
+
+    void copyFromRing(uint64_t index, T* output, uint64_t count) noexcept {
+        const uint64_t offset = index & MASK;
+        const uint64_t first = std::min(count, CAP - offset);
+        copyContiguous(output, ringData() + offset, first);
+        copyContiguous(output + first, ringData(), count - first);
+    }
+
+    T* ringData() noexcept {
+#if FQ_ARM_RING_INLINE
+        return mRingBuffer.data();
+#else
+        return mRingBuffer;
 #endif
     }
 
