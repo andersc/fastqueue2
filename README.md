@@ -309,9 +309,10 @@ Deaod, Dro, and David V5 have no matching bulk APIs.
 Transfer count is timed pointer items per round, not queue capacity or a
 throughput limit. Short runs (for example 5M transfers) screen widths quickly;
 longer runs (for example 100M transfers) confirm selected results with less
-noise. Existing rows are not all one count: M5 width screening used 30M/9 rounds,
-while M5 and listed Linux confirmations use 100M/12 rounds. Fixed counts trade
-benchmark runtime against scheduler, frequency, and thermal noise. For very fast
+noise. Existing rows are not all one count: 5M/12-round sweeps screen valid widths,
+while 100M/12-round confirmations measure scalar plus selected winners. Fixed
+counts trade benchmark runtime against scheduler, frequency, and thermal noise.
+For very fast
 queues, target at least 100–500 ms per timed sample and scale transfer count to
 match expected items/s.
 
@@ -319,12 +320,12 @@ match expected items/s.
 
 | CPU / OS | Build / pinning | Scalar mode | Best fixed width | Best median | Gain vs scalar mode* |
 |---|---|---:|---:|---:|---:|
-| Apple M5, macOS arm64 | `-O3 -DNDEBUG -march=native`, scheduler affinity | 423.462 M/s | **14 pointers** | **984.153 M/s** | **+132.4%** |
-| AMD EPYC 7702P (Zen2), Linux x86_64 | `-march=znver2`, CPUs 5/6 via `taskset` | 87.189 M/s | **2 pointers** | **216.493 M/s** | **+148.3%** |
-| ARM Cortex-X925, Linux arm64 | `-march=native`, X925 CPUs 5/6, `taskset` | 92.575 M/s | **8 pointers** | **667.779 M/s** | **+621.3%** |
-| AMD EPYC 7702, Zen2 dual socket, Linux x86_64 | `-march=native`, same-socket CPUs 1/3, `taskset` | 91.247 M/s | **2 pointers** | **218.096 M/s** | **+139.0%** |
-| Intel Xeon E5-2630L v3, Haswell, Linux x86_64 | `-march=native`, same-socket CPUs 1/3, `taskset` | 26.541 M/s | **1 pointer** | **141.074 M/s** | **+431.5%** |
-| AMD EPYC 7702P, Zen2, Linux x86_64 | `-march=native`, CPUs 1/3, `taskset` | 85.442 M/s | **2 pointers** | **211.500 M/s** | **+147.5%** |
+| Apple M5, macOS arm64 | `-O3 -DNDEBUG -march=native`, scheduler affinity | 405.702 M/s | **14 pointers** | **971.983 M/s** | **+139.6%** |
+| AMD EPYC 7702P (Zen2), Linux x86_64 | `-march=znver2`, CPUs 5/6 via `taskset` | 86.136 M/s | **2 pointers** | **216.641 M/s** | **+151.4%** |
+| ARM Cortex-X925, Linux arm64 | `-march=native`, X925 CPUs 5/6, `taskset` | 84.209 M/s | **8 pointers** | **682.023 M/s** | **+709.9%** |
+| AMD EPYC 7702, Zen2 dual socket, Linux x86_64 | `-march=native`, same-socket CPUs 1/3, `taskset` | 92.008 M/s | **8 pointers** | **176.237 M/s** | **+91.5%** |
+| Intel Xeon E5-2630L v3, Haswell, Linux x86_64 | `-march=native`, same-socket CPUs 1/3, `taskset` | 35.098 M/s | **1 pointer** | **195.356 M/s** | **+456.6%** |
+| AMD EPYC 7702P, Zen2, Linux x86_64 | `-march=native`, CPUs 1/3, `taskset` | 85.842 M/s | **2 pointers** | **212.092 M/s** | **+147.1%** |
 
 \* **Scalar mode and fixed width 1 are not like-for-like API measurements.**
 `BULK_BATCH_SIZE=0` calls scalar `tryPush`/`tryPop` through `runOne`; width 1
@@ -333,42 +334,52 @@ Both move one pointer per successful operation, but their caller loops, call
 layout, retry behavior, and generated code differ. Read this table as measured
 configuration throughput, not as isolated cost of grouping one pointer.
 
-The Haswell `+431.5%` row is especially unusual. It does **not** mean that
-"batching one pointer is generally 431% faster." Its scalar-mode confirmation
-(`26.541 M/s`) is far below the separate Haswell sweep's width-0 result
-(`121.776 M/s`), showing strong path/profile sensitivity. Keep it as result for
-that exact native configuration; rerun scalar and width-1 distributions before
-using it for a Haswell tuning decision.
+The Haswell width-1 result is especially unusual. It does **not** mean that
+"batching one pointer is generally 456.6% faster." Width 1 is a distinct
+bulk-call path, and scalar versus width-1 results vary materially by run
+profile. Keep it as result for that exact native configuration; use repeated,
+matched scalar and width-1 distributions before making a Haswell tuning
+decision.
 
-M5 confirmation used 100M transfers/12 rounds. Fixed-14 raw range:
-`953.279–995.004 M/s`; fixed-16 was lower at `907.194 M/s` median. Its earlier
-30M/9-round width sweep showed width 8 `819.813`, 9 `831.228`, 10 `760.521`,
-11 `869.855`, 12 `788.865`, 13 `912.711`, 14 `986.292`, 15 `849.421`, and 16
-`920.233 M/s` median. Result is architecture, compiler, CPU placement, and
-frequency dependent; do not treat width 14 as universal.
+M5 100M/12-round confirmation measured scalar `405.702 M/s`; fixed-14
+`971.983 M/s` median (raw range `947.525–990.994 M/s`); fixed-16 screening
+median was `915.786 M/s`. Fresh 5M/12-round width sweep medians for widths
+0..16 were: `404.961`, `399.093`, `444.520`, `398.999`, `479.157`, `487.387`,
+`506.235`, `598.372`, `810.849`, `818.386`, `865.688`, `856.219`, `944.696`,
+`926.612`, `994.555`, `767.740`, and `915.786 M/s`. Width 14 retained lead.
+Result is architecture, compiler, CPU placement, and frequency dependent; do
+not treat width 14 as universal.
 
-Zen2 100M/12-round sweep medians for widths 1..8 were: `96.676`, `216.493`,
-`200.052`, `110.051`, `104.375`, `135.896`, `134.609`, and `183.968 M/s`.
-Fixed-2 wins there. Wider batch does **not** guarantee more throughput because
+EPYC 7702P 100M/12-round confirmation measured scalar `86.136 M/s` and
+fixed-2 `216.641 M/s`; fresh 5M sweep medians for widths 1..8 were `96.231`,
+`219.491`, `201.201`, `109.358`, `105.974`, `137.958`, `134.691`, and
+`184.613 M/s`. Fixed-2 retained lead. Wider batch does **not** guarantee more
+throughput because
 queue occupancy, retry patterns, compiler code shape, and cache/coherence traffic
 can dominate payload copy work.
 
-Original Linux benchmark hosts received a native 100M-transfer, 12-round pooled
-FastQueue-only sweep using their existing CPU pairs. All selected pairs are
-separate physical cores under `performance` governor: Cortex-X925 CPUs 5/6 are
-same X925 cluster; dual-socket Zen2 CPUs 1/3 and Haswell CPUs 1/3 are same socket;
-single-socket Zen2P CPUs 1/3 are local physical cores. Sweep medians `BULK_BATCH_SIZE=0..8`:
+Linux hosts received fresh native 5M-transfer, 12-round pooled FastQueue-only
+sweeps using their existing CPU pairs, followed by fresh 100M/12-round scalar
+and selected-width confirmations. All selected pairs are separate physical
+cores under `performance` governor: Cortex-X925 CPUs 5/6 are same X925 cluster;
+dual-socket Zen2 CPUs 1/3 and Haswell CPUs 1/3 are same socket; single-socket
+Zen2P CPUs 1/3 are local physical cores. Fresh 5M sweep medians
+`BULK_BATCH_SIZE=0..8`:
 
 | Platform / CPU | Width 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | Winner |
-| ARM Cortex-X925, Linux arm64 | 92.575 | 83.220 | 135.053 | 230.171 | 500.039 | 359.211 | 413.696 | 453.453 | **670.492** | 8 |
-| AMD EPYC 7702, dual-socket Zen2, Linux x86_64 | 97.338 | 100.476 | **220.244** | 67.120 | 122.665 | 107.988 | 136.775 | 132.755 | 176.345 | 2 |
-| Intel Xeon E5-2630L v3, Haswell, Linux x86_64 | 121.776 | **132.575** | 24.363 | 20.505 | 27.601 | 30.126 | 34.074 | 37.332 | 51.699 | 1 |
-| AMD EPYC 7702P, Zen2, Linux x86_64 | 84.343 | 92.049 | **213.277** | 198.824 | 110.455 | 100.775 | 133.186 | 132.867 | 188.305 | 2 |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| ARM Cortex-X925, Linux arm64 | 84.381 | 80.865 | 128.086 | 264.456 | 457.513 | 386.042 | 413.734 | 397.111 | **671.673** | 8 |
+| AMD EPYC 7702, dual-socket Zen2, Linux x86_64 | 86.682 | 96.052 | 216.098 | 68.311 | 122.890 | 104.189 | 138.996 | 132.714 | 174.528 | 2 |
+| Intel Xeon E5-2630L v3, Haswell, Linux x86_64 | 40.603 | **185.678** | 33.970 | 28.318 | 39.098 | 39.195 | 45.863 | 51.130 | 67.611 | 1 |
+| AMD EPYC 7702P, Zen2, Linux x86_64 | 86.354 | 89.828 | **211.461** | 202.505 | 111.040 | 103.148 | 134.803 | 135.979 | 183.596 | 2 |
 
-Values above are M items/s. Full 100M confirmation selected final winners as
-reported table: Cortex-X925 width 8 `667.779`; dual-socket EPYC 7702 width 2
-`218.096`; Xeon E5-2630L v3 width 1 `141.074`; EPYC 7702P width 2 `211.500`.
-These are FastQueue scalar-vs-bulk results only, not competitor comparisons.
+Values above are M items/s. Full 100M confirmation retained Cortex-X925 width
+8 `682.023`, Haswell width 1 `195.356`, and EPYC 7702P width 2 `212.092`. On
+dual-socket EPYC 7702, 5M screening chose width 2, but full 100M checks found
+width 8 `176.237` above width 2 `54.550`; table therefore reports width 8 as
+final result. Its 100M width-8 result is below 5M width-2 result, underlining
+that short sweeps screen candidates only; use long matched confirmations for
+published winner and gain.
 
 ### Reproduce before claims
 
