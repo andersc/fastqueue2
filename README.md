@@ -216,7 +216,7 @@ Deaod, Dro, and David V5 have no matching bulk APIs.
 
 ### Measured width sweep
 
-| CPU / OS | Build / pinning | Scalar | Best fixed width | Best median | Gain |
+| CPU / OS | Build / pinning | Scalar mode | Best fixed width | Best median | Gain vs scalar mode* |
 |---|---|---:|---:|---:|---:|
 | Apple M5, macOS arm64 | `-O3 -DNDEBUG -march=native`, scheduler affinity | 423.462 M/s | **14 pointers** | **984.153 M/s** | **+132.4%** |
 | AMD EPYC 7702P (Zen2), Linux x86_64 | `-march=znver2`, CPUs 5/6 via `taskset` | 87.189 M/s | **2 pointers** | **216.493 M/s** | **+148.3%** |
@@ -224,6 +224,20 @@ Deaod, Dro, and David V5 have no matching bulk APIs.
 | AMD EPYC 7702, Zen2 dual socket, Linux x86_64 | `-march=native`, same-socket CPUs 1/3, `taskset` | 91.247 M/s | **2 pointers** | **218.096 M/s** | **+139.0%** |
 | Intel Xeon E5-2630L v3, Haswell, Linux x86_64 | `-march=native`, same-socket CPUs 1/3, `taskset` | 26.541 M/s | **1 pointer** | **141.074 M/s** | **+431.5%** |
 | AMD EPYC 7702P, Zen2, Linux x86_64 | `-march=native`, CPUs 1/3, `taskset` | 85.442 M/s | **2 pointers** | **211.500 M/s** | **+147.5%** |
+
+\* **Scalar mode and fixed width 1 are not like-for-like API measurements.**
+`BULK_BATCH_SIZE=0` calls scalar `tryPush`/`tryPop` through `runOne`; width 1
+calls `tryPushBatch<1>`/`tryPopBatch<1>` through bulk producer/consumer loops.
+Both move one pointer per successful operation, but their caller loops, call
+layout, retry behavior, and generated code differ. Read this table as measured
+configuration throughput, not as isolated cost of grouping one pointer.
+
+The Haswell `+431.5%` row is especially unusual. It does **not** mean that
+"batching one pointer is generally 431% faster." Its scalar-mode confirmation
+(`26.541 M/s`) is far below the separate Haswell sweep's width-0 result
+(`121.776 M/s`), showing strong path/profile sensitivity. Keep it as result for
+that exact native configuration; rerun scalar and width-1 distributions before
+using it for a Haswell tuning decision.
 
 M5 confirmation used 100M transfers/12 rounds. Fixed-14 raw range:
 `953.279–995.004 M/s`; fixed-16 was lower at `907.194 M/s` median. Its earlier
