@@ -343,12 +343,11 @@ decision.
 
 M5 100M/12-round confirmation measured scalar `405.702 M/s`; fixed-14
 `971.983 M/s` median (raw range `947.525–990.994 M/s`); fixed-16 screening
-median was `915.786 M/s`. Fresh 5M/12-round width sweep medians for widths
-0..16 were: `404.961`, `399.093`, `444.520`, `398.999`, `479.157`, `487.387`,
-`506.235`, `598.372`, `810.849`, `818.386`, `865.688`, `856.219`, `944.696`,
-`926.612`, `994.555`, `767.740`, and `915.786 M/s`. Width 14 retained lead.
-Result is architecture, compiler, CPU placement, and frequency dependent; do
-not treat width 14 as universal.
+median was `915.786 M/s`. Fresh 5M/12-round medians were scalar mode
+`404.961 M/s`, then fixed widths 1..16: `399.093`, `444.520`, `398.999`,
+`479.157`, `487.387`, `506.235`, `598.372`, `810.849`, `818.386`, `865.688`,
+`856.219`, `944.696`, `926.612`, `994.555`, `767.740`, and `915.786 M/s`.
+Width 14 retained lead.
 
 EPYC 7702P 100M/12-round confirmation measured scalar `86.136 M/s` and
 fixed-2 `216.641 M/s`; fresh 5M sweep medians for widths 1..8 were `96.231`,
@@ -359,17 +358,16 @@ queue occupancy, retry patterns, compiler code shape, and cache/coherence traffi
 can dominate payload copy work.
 
 Linux hosts received fresh native 5M-transfer, 12-round pooled FastQueue-only
-sweeps using their existing CPU pairs, followed by fresh 100M/12-round scalar
-and selected-width confirmations. All selected pairs are separate physical
+sweeps using existing CPU pairs, followed by fresh 100M/12-round scalar and
+selected fixed-width confirmations. All selected pairs are separate physical
 cores under `performance` governor: Cortex-X925 CPUs 5/6 are same X925 cluster;
 dual-socket Zen2 CPUs 1/3 and Haswell CPUs 1/3 are same socket; single-socket
-Zen2P CPUs 1/3 are local physical cores. Fresh 5M sweep medians
-`BULK_BATCH_SIZE=0..8`:
+Zen2P CPUs 1/3 are local physical cores. Fresh 5M sweep medians in M items/s:
 
-| Platform / CPU | Width 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | Winner |
+| Platform / CPU | Scalar API | Fixed 1 | Fixed 2 | Fixed 3 | Fixed 4 | Fixed 5 | Fixed 6 | Fixed 7 | Fixed 8 | Best fixed width |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
 | ARM Cortex-X925, Linux arm64 | 84.381 | 80.865 | 128.086 | 264.456 | 457.513 | 386.042 | 413.734 | 397.111 | **671.673** | 8 |
-| AMD EPYC 7702, dual-socket Zen2, Linux x86_64 | 86.682 | 96.052 | 216.098 | 68.311 | 122.890 | 104.189 | 138.996 | 132.714 | 174.528 | 2 |
+| AMD EPYC 7702, dual-socket Zen2, Linux x86_64 | 86.682 | 96.052 | **216.098** | 68.311 | 122.890 | 104.189 | 138.996 | 132.714 | 174.528 | 2 |
 | Intel Xeon E5-2630L v3, Haswell, Linux x86_64 | 40.603 | **185.678** | 33.970 | 28.318 | 39.098 | 39.195 | 45.863 | 51.130 | 67.611 | 1 |
 | AMD EPYC 7702P, Zen2, Linux x86_64 | 86.354 | 89.828 | **211.461** | 202.505 | 111.040 | 103.148 | 134.803 | 135.979 | 183.596 | 2 |
 
@@ -384,12 +382,12 @@ published winner and gain.
 ### Reproduce before claims
 
 ```sh
-# Apple M5: target cache-line capacity supports widths 0..16.
+# Apple M5: fixed batch widths 1..16; scalar API uses `BULK_BATCH_SIZE=0`.
 clang++ -std=c++20 -O3 -DNDEBUG -march=native -pthread -I. -Ideaod_spsc -Idro \
   -DSOLO_QUEUE=4 -DPOOLED_ONLY=1 -DTRANSFER_COUNT=100000000ULL -DROUNDS=12 \
   -DBULK_BATCH_SIZE=14 main.cpp -o fastqueue-bulk14
 
-# Zen2: target cache-line capacity supports widths 0..8.
+# Zen2: fixed batch widths 1..8; scalar API uses `BULK_BATCH_SIZE=0`.
 g++ -std=c++20 -O3 -DNDEBUG -march=znver2 -pthread -I. -Ideaod_spsc -Idro \
   -DSOLO_QUEUE=4 -DPOOLED_ONLY=1 -DTRANSFER_COUNT=100000000ULL -DROUNDS=12 \
   -DPRODUCER_CPU=5 -DCONSUMER_CPU=6 -DBULK_BATCH_SIZE=2 main.cpp -o fastqueue-bulk2
