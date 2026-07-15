@@ -93,7 +93,7 @@ def svg_voxel_cube(rows, path: Path, meta: dict, max_cpus: int):
         # Viridis-like, stable global scale across every width slice.
         r, g, b = int(33 + 220*t), int(35 + 170*t), int(75 + 65*(1-t))
         return f'rgb({int(r*shade)},{int(g*shade)},{int(b*shade)})'
-    def point(x, z, y): return (ox + (x-z)*cw, oy + (x+z)*ch - y*layer)
+    def point(producer, consumer, depth): return (ox + (producer-consumer)*cw, oy + (producer+consumer)*ch - depth*layer)
     lines = [
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{W}" height="{H}" viewBox="0 0 {W} {H}">',
         '<style>text{font:12px sans-serif;fill:#e2e8f0}.small{font-size:10px}.title{font-size:20px;font-weight:bold}.hint{font-size:11px;fill:#94a3b8}.slice{transition:opacity .15s}.slice:hover{opacity:1!important}.legend{cursor:pointer}.legend:hover{fill:#fff}</style>',
@@ -113,7 +113,7 @@ def svg_voxel_cube(rows, path: Path, meta: dict, max_cpus: int):
                 if p == c: continue
                 v = value.get((p, c, width))
                 if v is None: continue
-                a = point(xi, zi, yi); b = point(xi+1, zi, yi); d = point(xi, zi+1, yi); e = point(xi+1, zi+1, yi)
+                a = point(zi, xi, yi); b = point(zi+1, xi, yi); d = point(zi, xi+1, yi); e = point(zi+1, xi+1, yi)
                 # top, right and front faces: throughput color carries fourth dimension.
                 top = f'{a[0]},{a[1]} {b[0]},{b[1]} {e[0]},{e[1]} {d[0]},{d[1]}'
                 right = f'{b[0]},{b[1]} {e[0]},{e[1]} {e[0]},{e[1]+4} {b[0]},{b[1]+4}'
