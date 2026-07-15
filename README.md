@@ -147,6 +147,61 @@ sudo cpupower frequency-set -g performance
 sudo chrt -f 90 ./bench
 ```
 
+## Topology matrix: producer → consumer communication
+
+`FastQueue` performance depends on producer/consumer placement: physical core,
+SMT sibling, cache cluster, socket/NUMA boundary, CPU governor, and queue
+occupancy all affect cache-line handoff. Do not treat one two-core benchmark as
+a universal CPU ranking.
+
+`tools/run_topology_matrix.py` builds an opt-in benchmark and produces an
+ordered producer→consumer matrix for every logical CPU available to current
+process. It measures `Scalar API` separately, then every target-supported
+fixed width (`1..8` on x86_64/common Linux arm64; `1..16` with Apple 128-byte
+ARM batch staging). Diagonal cells are blank: a queue needs distinct producer
+and consumer threads. CSV rows also record socket/core/SMT data where Linux
+exposes it, hard-pin success, raw rounds, and median summaries.
+
+Quick bounded local probe—limits work to four allowed logical CPUs:
+
+```bash
+python3 tools/run_topology_matrix.py --max-cpus 4 --transfers 2162160 --rounds 3 --warmups 1
+```
+
+Full matrices grow quickly: `ordered_pairs × (1 + fixed_widths) ×
+(warmups + rounds)`. Start bounded. Use a transfer count divisible by every
+fixed width: `840` minimum for an 8-wide target, `720720` minimum for a
+16-wide target. Increase it until each individual sample lasts roughly
+100–500 ms. Artifacts land in `docs/topology-matrix/`:
+
+```text
+metadata.json       OS, compiler-adjacent and placement-confidence metadata
+results.csv         every pair × width × round; resumable raw measurements
+summary.json        median throughput for every pair × width
+scalar-heatmap.svg  scalar API producer-row → consumer-column matrix
+fixed-*-heatmap.svg largest supported fixed-width matrix
+width-depth.svg     median across all ordered pairs by scalar/fixed mode
+```
+
+Linux uses `sched_getaffinity` and only tests CPUs allowed by cpuset/container
+policy; each worker calls `pthread_setaffinity_np`, and `pinned=1` in CSV means
+both calls succeeded. CPU IDs can be sparse. Socket/core/SMT labels come from
+Linux sysfs, not guessed numbering. macOS has no public hard logical-CPU
+pinning equivalent; runner records advisory placement confidence and matrix
+rows report pin failure rather than pretending placement is exact. Result is
+still useful as a scheduling-sensitive workload graph, not proof of a physical
+core-to-core path. Existing queue backends support x86_64 and arm64 only.
+New CPU *models* in those architectures need no LLM onboarding—the runner
+probes topology and compiles native code. A genuinely new ISA needs queue
+backend, correctness tests, and performance work before benchmark support.
+
+Representative local probe; regenerate on target before using for tuning.
+These SVGs are data-rich: hover colored cells for exact median M items/s.
+
+![Topology scalar matrix](docs/topology-matrix/scalar-heatmap.svg)
+
+![Topology batch-width depth](docs/topology-matrix/width-depth.svg)
+
 ## Usage
 
 See the original FastQueue (the link above).

@@ -27,5 +27,8 @@ target_link_libraries(fast_queue_integrity_test Threads::Threads)
 add_executable(fast_queue_bulk_test FastQueueBulkTest.cpp)
 target_link_libraries(fast_queue_bulk_test Threads::Threads)
 
+add_executable(fast_queue_topology_matrix FastQueueTopologyMatrix.cpp)
+target_link_libraries(fast_queue_topology_matrix Threads::Threads)
+
 enable_testing()
 add_test(NAME fast_queue_bulk_test COMMAND fast_queue_bulk_test)

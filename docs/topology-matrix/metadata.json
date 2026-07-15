@@ -1,0 +1,12 @@
+{
+  "os": "Darwin",
+  "release": "25.5.0",
+  "machine": "arm64",
+  "processor": "arm",
+  "python": "3.14.6",
+  "placement_confidence": "advisory macOS affinity; no hard logical-CPU pinning",
+  "machdep.cpu.brand_string": "Apple M5",
+  "hw.physicalcpu": "10",
+  "hw.logicalcpu": "10",
+  "hw.cachelinesize": "128"
+}
