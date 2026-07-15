@@ -72,6 +72,72 @@ def svg_heatmap(rows, width: int, path: Path, meta: dict):
     lines += [f'<text x="{left}" y="{top+plot+30}" class="small">min {lo:.1f} M/s</text>', f'<text x="{left+plot}" y="{top+plot+30}" text-anchor="end" class="small">max {hi:.1f} M/s</text>', '</svg>']
     path.write_text('\n'.join(lines))
 
+def svg_voxel_cube(rows, path: Path, meta: dict, max_cpus: int):
+    """Render throughput as color in an exploded isometric CPU×CPU×width cube.
+
+    x = producer CPU, y = consumer CPU, z = scalar/fixed batch mode.  SVG uses
+    an isometric projection: x runs down-right, y runs down-left, z stacks up.
+    A linked SVG remains useful without JavaScript: every depth slice is visible.
+    """
+    cpus = sorted({int(r['producer_cpu']) for r in rows} | {int(r['consumer_cpu']) for r in rows})
+    shown = cpus[:max_cpus] if max_cpus else cpus
+    widths = sorted({int(r['width']) for r in rows})
+    value = {(int(r['producer_cpu']), int(r['consumer_cpu']), int(r['width'])): float(r['median_mps']) for r in rows}
+    visible = [v for (p, c, _), v in value.items() if p in shown and c in shown]
+    lo, hi = min(visible, default=0.0), max(visible, default=1.0)
+    n = len(shown); cw = max(9, min(24, 280 // max(n, 1))); ch = max(5, cw // 2)
+    layer = max(ch * n + 8, 42); ox = 70 + cw * n; oy = 115 + layer * (len(widths) - 1)
+    W = max(900, ox + cw * n + 150); H = oy + ch * n + 110
+    def rgb(v, shade=1.0):
+        t = 0 if hi == lo else (v - lo) / (hi - lo)
+        # Viridis-like, stable global scale across every width slice.
+        r, g, b = int(33 + 220*t), int(35 + 170*t), int(75 + 65*(1-t))
+        return f'rgb({int(r*shade)},{int(g*shade)},{int(b*shade)})'
+    def point(x, z, y): return (ox + (x-z)*cw, oy + (x+z)*ch - y*layer)
+    lines = [
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{W}" height="{H}" viewBox="0 0 {W} {H}">',
+        '<style>text{font:12px sans-serif;fill:#e2e8f0}.small{font-size:10px}.title{font-size:20px;font-weight:bold}.hint{font-size:11px;fill:#94a3b8}.slice{transition:opacity .15s}.slice:hover{opacity:1!important}.legend{cursor:pointer}.legend:hover{fill:#fff}</style>',
+        '<rect width="100%" height="100%" fill="#07111f"/>',
+        '<text x="24" y="30" class="title">FastQueue 3D topology heat map</text>',
+        '<text x="24" y="51" class="hint">X: producer logical CPU · Y: consumer logical CPU · Z/depth: scalar or fixed batch width · color: median M items/s (one global scale)</text>',
+        '<text x="24" y="69" class="hint">Exploded layers prevent occlusion. Hover voxel for exact path; click legend mode to isolate depth slice.</text>',
+    ]
+    if len(shown) < len(cpus):
+        lines.append(f'<text x="24" y="87" class="hint">Overview limited to first {len(shown)} of {len(cpus)} logical CPUs. Re-run with --3d-max-cpus 0 for all CPUs.</text>')
+    # Back-to-front slices and cells. Each datum is a shallow isometric voxel.
+    for yi, width in enumerate(widths):
+        label = 'Scalar API' if width == 0 else f'Fixed {width}'
+        lines.append(f'<g class="slice" id="slice-{width}">')
+        for zi, p in enumerate(shown):
+            for xi, c in enumerate(shown):
+                if p == c: continue
+                v = value.get((p, c, width))
+                if v is None: continue
+                a = point(xi, zi, yi); b = point(xi+1, zi, yi); d = point(xi, zi+1, yi); e = point(xi+1, zi+1, yi)
+                # top, right and front faces: throughput color carries fourth dimension.
+                top = f'{a[0]},{a[1]} {b[0]},{b[1]} {e[0]},{e[1]} {d[0]},{d[1]}'
+                right = f'{b[0]},{b[1]} {e[0]},{e[1]} {e[0]},{e[1]+4} {b[0]},{b[1]+4}'
+                front = f'{d[0]},{d[1]} {e[0]},{e[1]} {e[0]},{e[1]+4} {d[0]},{d[1]+4}'
+                lines += [f'<g><polygon points="{right}" fill="{rgb(v,.58)}"/><polygon points="{front}" fill="{rgb(v,.76)}"/><polygon points="{top}" fill="{rgb(v)}" stroke="#0f172a" stroke-width=".4"/><title>{label}: producer CPU {p} → consumer CPU {c}; {v:.3f} M items/s</title></g>']
+        # Layer marker sits left of each plane.
+        lx, ly = point(0, n, yi)
+        lines.append(f'<text x="{lx-10}" y="{ly+4}" text-anchor="end" class="small">{label}</text></g>')
+    # Axes and CPU labels on bottom plane.
+    for i, cpu in enumerate(shown):
+        x, y = point(i, 0, 0); lines.append(f'<text x="{x+cw/2}" y="{y+16}" text-anchor="middle" class="small">P{cpu}</text>')
+        x, y = point(0, i, 0); lines.append(f'<text x="{x-cw/2-4}" y="{y+5}" text-anchor="end" class="small">C{cpu}</text>')
+    lines += [
+        f'<text x="24" y="{H-52}" class="hint">Global color scale: {lo:.1f} M/s <tspan fill="#94a3b8">(dark)</tspan> → {hi:.1f} M/s <tspan fill="#94a3b8">(bright)</tspan>. {meta["placement_confidence"]}.</text>',
+        f'<text x="24" y="{H-32}" class="hint">Diagonal omitted: producer and consumer must be distinct. 2D per-mode heatmaps remain precise comparison view.</text>',
+        '<script><![CDATA[function isolate(id){document.querySelectorAll(".slice").forEach(function(s){s.style.opacity=(s.id===id?"1":".10")})}]]></script>',
+    ]
+    # SVG script support varies by viewer; static exploded cube remains full fallback.
+    for i, width in enumerate(widths):
+        label = 'Scalar' if width == 0 else f'Fixed {width}'
+        lines.append(f'<text x="{24+i*58}" y="96" class="small legend" onclick="isolate(\'slice-{width}\')">{label}</text>')
+    lines.append('</svg>')
+    path.write_text('\n'.join(lines))
+
 def svg_depth(rows, path: Path, meta: dict):
     by=defaultdict(list)
     for r in rows: by[int(r['width'])].append(float(r['median_mps']))
@@ -83,11 +149,17 @@ def svg_depth(rows, path: Path, meta: dict):
     lines += [f'<text x="{L}" y="{H-18}" class="small">Scalar API is not a batch width. Fixed widths begin at 1.</text>', f'<text x="{L-8}" y="68" text-anchor="end" class="small">{hi:.0f} M/s</text>','</svg>']; path.write_text('\n'.join(lines))
 
 def main():
-    p=argparse.ArgumentParser(description=__doc__); p.add_argument('--out',type=Path,default=ROOT/'docs'/'topology-matrix'); p.add_argument('--max-cpus',type=int,default=0); p.add_argument('--transfers',type=int,default=2162160); p.add_argument('--rounds',type=int,default=3); p.add_argument('--warmups',type=int,default=1); p.add_argument('--no-build',action='store_true'); a=p.parse_args()
+    p=argparse.ArgumentParser(description=__doc__); p.add_argument('--out',type=Path,default=ROOT/'docs'/'topology-matrix'); p.add_argument('--max-cpus',type=int,default=0); p.add_argument('--3d-max-cpus',type=int,default=16,help='logical CPUs shown in 3D overview; 0 shows all'); p.add_argument('--transfers',type=int,default=2162160); p.add_argument('--rounds',type=int,default=3); p.add_argument('--warmups',type=int,default=1); p.add_argument('--no-build',action='store_true'); a=p.parse_args()
     a.out.mkdir(parents=True,exist_ok=True); meta=metadata(); (a.out/'metadata.json').write_text(json.dumps(meta,indent=2)+'\n')
-    exe=(ROOT/'cmake-build-release'/'fast_queue_topology_matrix') if a.no_build else build(ROOT/'cmake-build-topology')
+    if a.no_build:
+        candidates = [ROOT/'cmake-build-release'/'fast_queue_topology_matrix', ROOT/'cmake-build-topology'/'fast_queue_topology_matrix']
+        exe = next((candidate for candidate in candidates if candidate.exists()), None)
+        if exe is None:
+            raise SystemExit('--no-build needs fast_queue_topology_matrix in cmake-build-release or cmake-build-topology')
+    else:
+        exe = build(ROOT/'cmake-build-topology')
     csv_path=a.out/'results.csv'; command([exe,'--output',csv_path,'--max-cpus',str(a.max_cpus),'--transfers',str(a.transfers),'--rounds',str(a.rounds),'--warmups',str(a.warmups)])
     rows=aggregate(load(csv_path)); (a.out/'summary.json').write_text(json.dumps(rows,indent=2)+'\n')
-    max_width=max(map(lambda r:int(r['width']),rows),default=0); svg_heatmap(rows,0,a.out/'scalar-heatmap.svg',meta); svg_heatmap(rows,max_width,a.out/f'fixed-{max_width}-heatmap.svg',meta); svg_depth(rows,a.out/'width-depth.svg',meta)
-    print(f'Wrote {csv_path}, summary.json, scalar-heatmap.svg, fixed-{max_width}-heatmap.svg, width-depth.svg')
+    max_width=max(map(lambda r:int(r['width']),rows),default=0); svg_heatmap(rows,0,a.out/'scalar-heatmap.svg',meta); svg_heatmap(rows,max_width,a.out/f'fixed-{max_width}-heatmap.svg',meta); svg_depth(rows,a.out/'width-depth.svg',meta); svg_voxel_cube(rows,a.out/'topology-3d-heatmap.svg',meta,a.__dict__['3d_max_cpus'])
+    print(f'Wrote {csv_path}, summary.json, scalar-heatmap.svg, fixed-{max_width}-heatmap.svg, width-depth.svg, topology-3d-heatmap.svg')
 if __name__ == '__main__': main()

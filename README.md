@@ -181,6 +181,7 @@ summary.json        median throughput for every pair × width
 scalar-heatmap.svg  scalar API producer-row → consumer-column matrix
 fixed-*-heatmap.svg largest supported fixed-width matrix
 width-depth.svg     median across all ordered pairs by scalar/fixed mode
+topology-3d-heatmap.svg exploded 3D CPU-pair plane × scalar/fixed-width depth overview
 ```
 
 Linux uses `sched_getaffinity` and only tests CPUs allowed by cpuset/container
@@ -202,6 +203,16 @@ median M items/s.
 - [Scalar API producer → consumer heatmap](docs/topology-matrix/scalar-heatmap.svg)
 - [Fixed batch 16 producer → consumer heatmap](docs/topology-matrix/fixed-16-heatmap.svg)
 - [Scalar/fixed-width depth graph](docs/topology-matrix/width-depth.svg)
+- [3D CPU-from × CPU-to × width heat map](docs/topology-matrix/topology-3d-heatmap.svg)
+
+3D view maps **X = producer/from CPU**, **Y = consumer/to CPU**, and **Z =
+scalar/fixed batch width**. Each voxel color is median M items/s, using one
+scale across every width. Slices are deliberately exploded vertically: full
+3D overlap hides CPU pairs. Hover a voxel for exact direction, mode, and rate;
+click a mode legend in SVG-capable viewers to dim other width slices. Default
+overview caps display at 16 logical CPUs for readability; use
+`--3d-max-cpus 0` when generating all CPUs. Keep linked 2D heatmaps for exact
+per-width inspection.
 
 ## Usage
 
