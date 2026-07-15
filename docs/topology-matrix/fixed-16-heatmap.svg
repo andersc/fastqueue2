@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="300" height="290" viewBox="0 0 300 290">
+<svg xmlns="http://www.w3.org/2000/svg" width="780" height="770" viewBox="0 0 780 770">
 <style>text{font:12px sans-serif;fill:#172033}.small{font-size:10px}.title{font-size:20px;font-weight:bold}</style>
 <rect width="100%" height="100%" fill="#f8fafc"/>
 <text x="20" y="30" class="title">FastQueue topology matrix — Fixed batch 16</text>
@@ -8,12 +8,212 @@
 <text x="142" y="133.0" text-anchor="end" class="small">0</text>
 <text x="240.0" y="92" text-anchor="middle" class="small">1</text>
 <text x="142" y="193.0" text-anchor="end" class="small">1</text>
+<text x="300.0" y="92" text-anchor="middle" class="small">2</text>
+<text x="142" y="253.0" text-anchor="end" class="small">2</text>
+<text x="360.0" y="92" text-anchor="middle" class="small">3</text>
+<text x="142" y="313.0" text-anchor="end" class="small">3</text>
+<text x="420.0" y="92" text-anchor="middle" class="small">4</text>
+<text x="142" y="373.0" text-anchor="end" class="small">4</text>
+<text x="480.0" y="92" text-anchor="middle" class="small">5</text>
+<text x="142" y="433.0" text-anchor="end" class="small">5</text>
+<text x="540.0" y="92" text-anchor="middle" class="small">6</text>
+<text x="142" y="493.0" text-anchor="end" class="small">6</text>
+<text x="600.0" y="92" text-anchor="middle" class="small">7</text>
+<text x="142" y="553.0" text-anchor="end" class="small">7</text>
+<text x="660.0" y="92" text-anchor="middle" class="small">8</text>
+<text x="142" y="613.0" text-anchor="end" class="small">8</text>
+<text x="720.0" y="92" text-anchor="middle" class="small">9</text>
+<text x="142" y="673.0" text-anchor="end" class="small">9</text>
 <rect x="150" y="100" width="59" height="59" fill="#cbd5e1"/>
-<rect x="210" y="100" width="59" height="59" fill="rgb(22,35,90)"/>
-<title>P0 → C1: 1151.23 M/s</title>
-<rect x="150" y="160" width="59" height="59" fill="rgb(242,185,55)"/>
-<title>P1 → C0: 1266.86 M/s</title>
+<rect x="210" y="100" width="59" height="59" fill="rgb(197,154,62)"/>
+<title>P0 → C1: 1337.87 M/s</title>
+<rect x="270" y="100" width="59" height="59" fill="rgb(130,108,72)"/>
+<title>P0 → C2: 1266.18 M/s</title>
+<rect x="330" y="100" width="59" height="59" fill="rgb(101,89,77)"/>
+<title>P0 → C3: 1234.99 M/s</title>
+<rect x="390" y="100" width="59" height="59" fill="rgb(147,120,70)"/>
+<title>P0 → C4: 1284.13 M/s</title>
+<rect x="450" y="100" width="59" height="59" fill="rgb(74,71,81)"/>
+<title>P0 → C5: 1206.73 M/s</title>
+<rect x="510" y="100" width="59" height="59" fill="rgb(242,185,55)"/>
+<title>P0 → C6: 1386.11 M/s</title>
+<rect x="570" y="100" width="59" height="59" fill="rgb(223,172,57)"/>
+<title>P0 → C7: 1366.73 M/s</title>
+<rect x="630" y="100" width="59" height="59" fill="rgb(150,122,69)"/>
+<title>P0 → C8: 1287.57 M/s</title>
+<rect x="690" y="100" width="59" height="59" fill="rgb(231,177,56)"/>
+<title>P0 → C9: 1374.55 M/s</title>
+<rect x="150" y="160" width="59" height="59" fill="rgb(103,90,77)"/>
+<title>P1 → C0: 1237.64 M/s</title>
 <rect x="210" y="160" width="59" height="59" fill="#cbd5e1"/>
-<text x="150" y="250" class="small">min 1151.2 M/s</text>
-<text x="270" y="250" text-anchor="end" class="small">max 1266.9 M/s</text>
+<rect x="270" y="160" width="59" height="59" fill="rgb(143,117,70)"/>
+<title>P1 → C2: 1280.33 M/s</title>
+<rect x="330" y="160" width="59" height="59" fill="rgb(148,121,69)"/>
+<title>P1 → C3: 1285.76 M/s</title>
+<rect x="390" y="160" width="59" height="59" fill="rgb(136,113,71)"/>
+<title>P1 → C4: 1273.26 M/s</title>
+<rect x="450" y="160" width="59" height="59" fill="rgb(223,172,57)"/>
+<title>P1 → C5: 1366.51 M/s</title>
+<rect x="510" y="160" width="59" height="59" fill="rgb(103,90,77)"/>
+<title>P1 → C6: 1237.29 M/s</title>
+<rect x="570" y="160" width="59" height="59" fill="rgb(120,101,74)"/>
+<title>P1 → C7: 1255.25 M/s</title>
+<rect x="630" y="160" width="59" height="59" fill="rgb(121,102,74)"/>
+<title>P1 → C8: 1256.34 M/s</title>
+<rect x="690" y="160" width="59" height="59" fill="rgb(114,97,75)"/>
+<title>P1 → C9: 1248.81 M/s</title>
+<rect x="150" y="220" width="59" height="59" fill="rgb(51,55,85)"/>
+<title>P2 → C0: 1181.75 M/s</title>
+<rect x="210" y="220" width="59" height="59" fill="rgb(222,172,58)"/>
+<title>P2 → C1: 1365.65 M/s</title>
+<rect x="270" y="220" width="59" height="59" fill="#cbd5e1"/>
+<rect x="330" y="220" width="59" height="59" fill="rgb(99,88,77)"/>
+<title>P2 → C3: 1233.40 M/s</title>
+<rect x="390" y="220" width="59" height="59" fill="rgb(111,96,75)"/>
+<title>P2 → C4: 1246.38 M/s</title>
+<rect x="450" y="220" width="59" height="59" fill="rgb(102,90,77)"/>
+<title>P2 → C5: 1236.85 M/s</title>
+<rect x="510" y="220" width="59" height="59" fill="rgb(129,108,72)"/>
+<title>P2 → C6: 1265.53 M/s</title>
+<rect x="570" y="220" width="59" height="59" fill="rgb(197,154,62)"/>
+<title>P2 → C7: 1338.49 M/s</title>
+<rect x="630" y="220" width="59" height="59" fill="rgb(145,119,70)"/>
+<title>P2 → C8: 1282.61 M/s</title>
+<rect x="690" y="220" width="59" height="59" fill="rgb(127,107,73)"/>
+<title>P2 → C9: 1263.68 M/s</title>
+<rect x="150" y="280" width="59" height="59" fill="rgb(54,57,84)"/>
+<title>P3 → C0: 1184.75 M/s</title>
+<rect x="210" y="280" width="59" height="59" fill="rgb(94,84,78)"/>
+<title>P3 → C1: 1227.89 M/s</title>
+<rect x="270" y="280" width="59" height="59" fill="rgb(97,86,78)"/>
+<title>P3 → C2: 1230.86 M/s</title>
+<rect x="330" y="280" width="59" height="59" fill="#cbd5e1"/>
+<rect x="390" y="280" width="59" height="59" fill="rgb(89,80,79)"/>
+<title>P3 → C4: 1222.08 M/s</title>
+<rect x="450" y="280" width="59" height="59" fill="rgb(109,94,76)"/>
+<title>P3 → C5: 1243.51 M/s</title>
+<rect x="510" y="280" width="59" height="59" fill="rgb(125,105,73)"/>
+<title>P3 → C6: 1260.64 M/s</title>
+<rect x="570" y="280" width="59" height="59" fill="rgb(22,35,90)"/>
+<title>P3 → C7: 1149.93 M/s</title>
+<rect x="630" y="280" width="59" height="59" fill="rgb(85,78,79)"/>
+<title>P3 → C8: 1218.63 M/s</title>
+<rect x="690" y="280" width="59" height="59" fill="rgb(196,154,62)"/>
+<title>P3 → C9: 1337.55 M/s</title>
+<rect x="150" y="340" width="59" height="59" fill="rgb(35,44,87)"/>
+<title>P4 → C0: 1164.25 M/s</title>
+<rect x="210" y="340" width="59" height="59" fill="rgb(193,152,62)"/>
+<title>P4 → C1: 1334.26 M/s</title>
+<rect x="270" y="340" width="59" height="59" fill="rgb(82,76,80)"/>
+<title>P4 → C2: 1214.70 M/s</title>
+<rect x="330" y="340" width="59" height="59" fill="rgb(110,95,75)"/>
+<title>P4 → C3: 1245.21 M/s</title>
+<rect x="390" y="340" width="59" height="59" fill="#cbd5e1"/>
+<rect x="450" y="340" width="59" height="59" fill="rgb(39,46,87)"/>
+<title>P4 → C5: 1168.81 M/s</title>
+<rect x="510" y="340" width="59" height="59" fill="rgb(110,95,75)"/>
+<title>P4 → C6: 1244.95 M/s</title>
+<rect x="570" y="340" width="59" height="59" fill="rgb(68,66,82)"/>
+<title>P4 → C7: 1200.20 M/s</title>
+<rect x="630" y="340" width="59" height="59" fill="rgb(78,73,81)"/>
+<title>P4 → C8: 1210.19 M/s</title>
+<rect x="690" y="340" width="59" height="59" fill="rgb(93,83,78)"/>
+<title>P4 → C9: 1226.32 M/s</title>
+<rect x="150" y="400" width="59" height="59" fill="rgb(123,104,73)"/>
+<title>P5 → C0: 1258.90 M/s</title>
+<rect x="210" y="400" width="59" height="59" fill="rgb(37,45,87)"/>
+<title>P5 → C1: 1166.21 M/s</title>
+<rect x="270" y="400" width="59" height="59" fill="rgb(89,80,79)"/>
+<title>P5 → C2: 1222.25 M/s</title>
+<rect x="330" y="400" width="59" height="59" fill="rgb(93,84,78)"/>
+<title>P5 → C3: 1227.10 M/s</title>
+<rect x="390" y="400" width="59" height="59" fill="rgb(59,60,84)"/>
+<title>P5 → C4: 1189.72 M/s</title>
+<rect x="450" y="400" width="59" height="59" fill="#cbd5e1"/>
+<rect x="510" y="400" width="59" height="59" fill="rgb(25,37,89)"/>
+<title>P5 → C6: 1154.00 M/s</title>
+<rect x="570" y="400" width="59" height="59" fill="rgb(109,94,76)"/>
+<title>P5 → C7: 1243.42 M/s</title>
+<rect x="630" y="400" width="59" height="59" fill="rgb(203,158,61)"/>
+<title>P5 → C8: 1345.15 M/s</title>
+<rect x="690" y="400" width="59" height="59" fill="rgb(205,160,60)"/>
+<title>P5 → C9: 1346.83 M/s</title>
+<rect x="150" y="460" width="59" height="59" fill="rgb(119,101,74)"/>
+<title>P6 → C0: 1254.97 M/s</title>
+<rect x="210" y="460" width="59" height="59" fill="rgb(216,167,58)"/>
+<title>P6 → C1: 1359.21 M/s</title>
+<rect x="270" y="460" width="59" height="59" fill="rgb(192,151,62)"/>
+<title>P6 → C2: 1332.71 M/s</title>
+<rect x="330" y="460" width="59" height="59" fill="rgb(74,70,81)"/>
+<title>P6 → C3: 1206.48 M/s</title>
+<rect x="390" y="460" width="59" height="59" fill="rgb(121,102,74)"/>
+<title>P6 → C4: 1256.89 M/s</title>
+<rect x="450" y="460" width="59" height="59" fill="rgb(212,164,59)"/>
+<title>P6 → C5: 1354.21 M/s</title>
+<rect x="510" y="460" width="59" height="59" fill="#cbd5e1"/>
+<rect x="570" y="460" width="59" height="59" fill="rgb(120,102,74)"/>
+<title>P6 → C7: 1255.52 M/s</title>
+<rect x="630" y="460" width="59" height="59" fill="rgb(87,79,79)"/>
+<title>P6 → C8: 1219.92 M/s</title>
+<rect x="690" y="460" width="59" height="59" fill="rgb(184,145,64)"/>
+<title>P6 → C9: 1324.65 M/s</title>
+<rect x="150" y="520" width="59" height="59" fill="rgb(213,165,59)"/>
+<title>P7 → C0: 1355.16 M/s</title>
+<rect x="210" y="520" width="59" height="59" fill="rgb(84,77,80)"/>
+<title>P7 → C1: 1216.75 M/s</title>
+<rect x="270" y="520" width="59" height="59" fill="rgb(117,100,74)"/>
+<title>P7 → C2: 1252.61 M/s</title>
+<rect x="330" y="520" width="59" height="59" fill="rgb(104,91,76)"/>
+<title>P7 → C3: 1238.70 M/s</title>
+<rect x="390" y="520" width="59" height="59" fill="rgb(105,91,76)"/>
+<title>P7 → C4: 1239.06 M/s</title>
+<rect x="450" y="520" width="59" height="59" fill="rgb(187,148,63)"/>
+<title>P7 → C5: 1328.11 M/s</title>
+<rect x="510" y="520" width="59" height="59" fill="rgb(51,54,85)"/>
+<title>P7 → C6: 1181.27 M/s</title>
+<rect x="570" y="520" width="59" height="59" fill="#cbd5e1"/>
+<rect x="630" y="520" width="59" height="59" fill="rgb(91,82,78)"/>
+<title>P7 → C8: 1224.59 M/s</title>
+<rect x="690" y="520" width="59" height="59" fill="rgb(87,79,79)"/>
+<title>P7 → C9: 1220.78 M/s</title>
+<rect x="150" y="580" width="59" height="59" fill="rgb(100,88,77)"/>
+<title>P8 → C0: 1234.46 M/s</title>
+<rect x="210" y="580" width="59" height="59" fill="rgb(77,72,81)"/>
+<title>P8 → C1: 1209.01 M/s</title>
+<rect x="270" y="580" width="59" height="59" fill="rgb(100,88,77)"/>
+<title>P8 → C2: 1233.93 M/s</title>
+<rect x="330" y="580" width="59" height="59" fill="rgb(180,143,64)"/>
+<title>P8 → C3: 1320.20 M/s</title>
+<rect x="390" y="580" width="59" height="59" fill="rgb(112,96,75)"/>
+<title>P8 → C4: 1246.56 M/s</title>
+<rect x="450" y="580" width="59" height="59" fill="rgb(86,78,79)"/>
+<title>P8 → C5: 1218.98 M/s</title>
+<rect x="510" y="580" width="59" height="59" fill="rgb(123,104,73)"/>
+<title>P8 → C6: 1258.81 M/s</title>
+<rect x="570" y="580" width="59" height="59" fill="rgb(93,83,78)"/>
+<title>P8 → C7: 1226.32 M/s</title>
+<rect x="630" y="580" width="59" height="59" fill="#cbd5e1"/>
+<rect x="690" y="580" width="59" height="59" fill="rgb(121,102,74)"/>
+<title>P8 → C9: 1256.52 M/s</title>
+<rect x="150" y="640" width="59" height="59" fill="rgb(124,104,73)"/>
+<title>P9 → C0: 1259.54 M/s</title>
+<rect x="210" y="640" width="59" height="59" fill="rgb(84,77,80)"/>
+<title>P9 → C1: 1216.92 M/s</title>
+<rect x="270" y="640" width="59" height="59" fill="rgb(95,84,78)"/>
+<title>P9 → C2: 1228.50 M/s</title>
+<rect x="330" y="640" width="59" height="59" fill="rgb(90,82,79)"/>
+<title>P9 → C3: 1223.98 M/s</title>
+<rect x="390" y="640" width="59" height="59" fill="rgb(114,98,75)"/>
+<title>P9 → C4: 1249.71 M/s</title>
+<rect x="450" y="640" width="59" height="59" fill="rgb(116,99,74)"/>
+<title>P9 → C5: 1251.16 M/s</title>
+<rect x="510" y="640" width="59" height="59" fill="rgb(152,124,69)"/>
+<title>P9 → C6: 1290.17 M/s</title>
+<rect x="570" y="640" width="59" height="59" fill="rgb(34,43,88)"/>
+<title>P9 → C7: 1163.39 M/s</title>
+<rect x="630" y="640" width="59" height="59" fill="rgb(82,75,80)"/>
+<title>P9 → C8: 1214.44 M/s</title>
+<rect x="690" y="640" width="59" height="59" fill="#cbd5e1"/>
+<text x="150" y="730" class="small">min 1149.9 M/s</text>
+<text x="750" y="730" text-anchor="end" class="small">max 1386.1 M/s</text>
 </svg>

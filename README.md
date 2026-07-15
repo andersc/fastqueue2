@@ -195,12 +195,13 @@ New CPU *models* in those architectures need no LLM onboarding—the runner
 probes topology and compiles native code. A genuinely new ISA needs queue
 backend, correctness tests, and performance work before benchmark support.
 
-Representative local probe; regenerate on target before using for tuning.
-These SVGs are data-rich: hover colored cells for exact median M items/s.
+Representative Apple M5 advisory probe; regenerate on target before using for tuning.
+Graphs stay separate from README. SVG heatmap cells retain hover tooltips with exact
+median M items/s.
 
-![Topology scalar matrix](docs/topology-matrix/scalar-heatmap.svg)
-
-![Topology batch-width depth](docs/topology-matrix/width-depth.svg)
+- [Scalar API producer → consumer heatmap](docs/topology-matrix/scalar-heatmap.svg)
+- [Fixed batch 16 producer → consumer heatmap](docs/topology-matrix/fixed-16-heatmap.svg)
+- [Scalar/fixed-width depth graph](docs/topology-matrix/width-depth.svg)
 
 ## Usage
 
