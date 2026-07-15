@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="440" viewBox="0 0 900 440">
+<style>text{font:13px sans-serif;fill:#172033}.title{font-size:20px;font-weight:bold}.small{font-size:11px}</style>
+<rect width="100%" height="100%" fill="#f8fafc"/>
+<text x="20" y="30" class="title">Batch-width depth — median across all ordered CPU pairs</text>
+<text x="20" y="52" class="small">hard Linux logical-CPU pinning. Error bars omitted: inspect CSV for every pair and round.</text>
+<line x1="70" y1="375" x2="870" y2="375" stroke="#334155"/><line x1="70" y1="375" x2="70" y2="60" stroke="#334155"/>
+<rect x="100.44444444444444" y="269.26887847606486" width="28" height="105.73112152393512" rx="3" fill="#14b8a6"/><title>Scalar: 299.35 M/s median</title>
+<text x="114.44444444444444" y="395" text-anchor="middle" class="small">Scalar</text>
+<text x="114.44444444444444" y="264.26887847606486" text-anchor="middle" class="small">299</text>
+<rect x="189.33333333333334" y="269.450952459441" width="28" height="105.549047540559" rx="3" fill="#2563eb"/><title>1: 298.84 M/s median</title>
+<text x="203.33333333333334" y="395" text-anchor="middle" class="small">1</text>
+<text x="203.33333333333334" y="264.450952459441" text-anchor="middle" class="small">299</text>
+<rect x="278.22222222222223" y="250.92020061692057" width="28" height="124.07979938307942" rx="3" fill="#2563eb"/><title>2: 351.30 M/s median</title>
+<text x="292.22222222222223" y="395" text-anchor="middle" class="small">2</text>
+<text x="292.22222222222223" y="245.92020061692057" text-anchor="middle" class="small">351</text>
+<rect x="367.1111111111111" y="202.42494525418542" width="28" height="172.57505474581458" rx="3" fill="#2563eb"/><title>3: 488.61 M/s median</title>
+<text x="381.1111111111111" y="395" text-anchor="middle" class="small">3</text>
+<text x="381.1111111111111" y="197.42494525418542" text-anchor="middle" class="small">489</text>
+<rect x="456.0" y="96.08384939603008" width="28" height="278.9161506039699" rx="3" fill="#2563eb"/><title>4: 789.69 M/s median</title>
+<text x="470.0" y="395" text-anchor="middle" class="small">4</text>
+<text x="470.0" y="91.08384939603008" text-anchor="middle" class="small">790</text>
+<rect x="544.8888888888889" y="129.52789093220935" width="28" height="245.47210906779065" rx="3" fill="#2563eb"/><title>5: 695.00 M/s median</title>
+<text x="558.8888888888889" y="395" text-anchor="middle" class="small">5</text>
+<text x="558.8888888888889" y="124.52789093220935" text-anchor="middle" class="small">695</text>
+<rect x="633.7777777777778" y="117.9396147778379" width="28" height="257.0603852221621" rx="3" fill="#2563eb"/><title>6: 727.81 M/s median</title>
+<text x="647.7777777777778" y="395" text-anchor="middle" class="small">6</text>
+<text x="647.7777777777778" y="112.9396147778379" text-anchor="middle" class="small">728</text>
+<rect x="722.6666666666666" y="115.53768631236903" width="28" height="259.46231368763097" rx="3" fill="#2563eb"/><title>7: 734.61 M/s median</title>
+<text x="736.6666666666666" y="395" text-anchor="middle" class="small">7</text>
+<text x="736.6666666666666" y="110.53768631236903" text-anchor="middle" class="small">735</text>
+<rect x="811.5555555555555" y="60.0" width="28" height="315.0" rx="3" fill="#2563eb"/><title>8: 891.85 M/s median</title>
+<text x="825.5555555555555" y="395" text-anchor="middle" class="small">8</text>
+<text x="825.5555555555555" y="55.0" text-anchor="middle" class="small">892</text>
+<text x="70" y="422" class="small">Scalar API is not a batch width. Fixed widths begin at 1.</text>
+<text x="62" y="68" text-anchor="end" class="small">892 M/s</text>
+</svg>

@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="420" height="410" viewBox="0 0 420 410">
+<style>text{font:12px sans-serif;fill:#172033}.small{font-size:10px}.title{font-size:20px;font-weight:bold}</style>
+<rect width="100%" height="100%" fill="#f8fafc"/>
+<text x="20" y="30" class="title">FastQueue topology matrix — Fixed batch 8</text>
+<text x="20" y="52" class="small">Color: relative median throughput (M items/s). hard Linux logical-CPU pinning.</text>
+<text x="20" y="75" class="small">Rows: producer logical CPU. Columns: consumer logical CPU. Diagonal intentionally blank.</text>
+<text x="180.0" y="92" text-anchor="middle" class="small">0</text>
+<text x="142" y="133.0" text-anchor="end" class="small">0</text>
+<text x="240.0" y="92" text-anchor="middle" class="small">1</text>
+<text x="142" y="193.0" text-anchor="end" class="small">1</text>
+<text x="300.0" y="92" text-anchor="middle" class="small">2</text>
+<text x="142" y="253.0" text-anchor="end" class="small">2</text>
+<text x="360.0" y="92" text-anchor="middle" class="small">3</text>
+<text x="142" y="313.0" text-anchor="end" class="small">3</text>
+<rect x="150" y="100" width="59" height="59" fill="#cbd5e1"/>
+<rect x="210" y="100" width="59" height="59" fill="rgb(127,107,73)"/>
+<title>P0 → C1: 876.58 M/s</title>
+<rect x="270" y="100" width="59" height="59" fill="rgb(196,154,62)"/>
+<title>P0 → C2: 902.52 M/s</title>
+<rect x="330" y="100" width="59" height="59" fill="rgb(166,133,67)"/>
+<title>P0 → C3: 891.09 M/s</title>
+<rect x="150" y="160" width="59" height="59" fill="rgb(22,35,90)"/>
+<title>P1 → C0: 836.74 M/s</title>
+<rect x="210" y="160" width="59" height="59" fill="#cbd5e1"/>
+<rect x="270" y="160" width="59" height="59" fill="rgb(104,91,76)"/>
+<title>P1 → C2: 867.78 M/s</title>
+<rect x="330" y="160" width="59" height="59" fill="rgb(145,119,70)"/>
+<title>P1 → C3: 883.35 M/s</title>
+<rect x="150" y="220" width="59" height="59" fill="rgb(185,146,63)"/>
+<title>P2 → C0: 898.28 M/s</title>
+<rect x="210" y="220" width="59" height="59" fill="rgb(205,159,60)"/>
+<title>P2 → C1: 905.69 M/s</title>
+<rect x="270" y="220" width="59" height="59" fill="#cbd5e1"/>
+<rect x="330" y="220" width="59" height="59" fill="rgb(242,185,55)"/>
+<title>P2 → C3: 919.50 M/s</title>
+<rect x="150" y="280" width="59" height="59" fill="rgb(170,136,66)"/>
+<title>P3 → C0: 892.61 M/s</title>
+<rect x="210" y="280" width="59" height="59" fill="rgb(161,130,67)"/>
+<title>P3 → C1: 889.21 M/s</title>
+<rect x="270" y="280" width="59" height="59" fill="rgb(195,153,62)"/>
+<title>P3 → C2: 902.19 M/s</title>
+<rect x="330" y="280" width="59" height="59" fill="#cbd5e1"/>
+<text x="150" y="370" class="small">min 836.7 M/s</text>
+<text x="390" y="370" text-anchor="end" class="small">max 919.5 M/s</text>
+</svg>

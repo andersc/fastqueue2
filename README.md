@@ -196,23 +196,28 @@ New CPU *models* in those architectures need no LLM onboarding—the runner
 probes topology and compiles native code. A genuinely new ISA needs queue
 backend, correctness tests, and performance work before benchmark support.
 
-Representative Apple M5 advisory probe; regenerate on target before using for tuning.
+Measured Linux probe: dual-socket AMD EPYC 7702, Linux x86_64. This is fresh
+hard-pinned data, not Apple advisory scheduling data. It covers CPUs `0..3` only:
+12 ordered producer→consumer paths, all inside socket 0/NUMA node 0. Each path
+and mode used 5 timed rounds after 1 warmup, with 2,162,160 validated pointer
+transfers per timed round: 540 raw samples total. It therefore measures local
+core-to-core communication only; rerun with representative CPUs from both
+sockets for cross-NUMA data.
+
 Graphs stay separate from README. SVG heatmap cells retain hover tooltips with exact
 median M items/s.
 
-- [Scalar API producer → consumer heatmap](docs/topology-matrix/scalar-heatmap.svg)
-- [Fixed batch 16 producer → consumer heatmap](docs/topology-matrix/fixed-16-heatmap.svg)
-- [Scalar/fixed-width depth graph](docs/topology-matrix/width-depth.svg)
-- [3D CPU-from × CPU-to × width heat map](docs/topology-matrix/topology-3d-heatmap.svg)
+- [Scalar API producer → consumer heatmap](docs/topology-matrix/amd-epyc-7702-dual/scalar-heatmap.svg)
+- [Fixed batch 8 producer → consumer heatmap](docs/topology-matrix/amd-epyc-7702-dual/fixed-8-heatmap.svg)
+- [Scalar/fixed-width depth graph](docs/topology-matrix/amd-epyc-7702-dual/width-depth.svg)
+- [3D CPU-from × CPU-to × width heat map](docs/topology-matrix/amd-epyc-7702-dual/topology-3d-heatmap.svg)
+- [Raw results CSV](docs/topology-matrix/amd-epyc-7702-dual/results.csv), [median summary JSON](docs/topology-matrix/amd-epyc-7702-dual/summary.json), and [run metadata](docs/topology-matrix/amd-epyc-7702-dual/metadata.json)
 
-3D view maps **X = producer/from CPU**, **Y = consumer/to CPU**, and **Z =
-scalar/fixed batch width**. Each voxel color is median M items/s, using one
-scale across every width. Slices are deliberately exploded vertically: full
-3D overlap hides CPU pairs. Hover a voxel for exact direction, mode, and rate;
-click a mode legend in SVG-capable viewers to dim other width slices. Default
-overview caps display at 16 logical CPUs for readability; use
-`--3d-max-cpus 0` when generating all CPUs. Keep linked 2D heatmaps for exact
-per-width inspection.
+Aggregate median rates across all raw samples: Scalar API **299.104 M items/s**;
+Fixed 1 **299.343**; Fixed 2 **351.495**; Fixed 3 **488.654**; Fixed 4
+**789.799**; Fixed 5 **694.877**; Fixed 6 **728.247**; Fixed 7 **734.957**;
+Fixed 8 **891.849**. Use 3D and 2D pair graphs, not aggregate rates alone, for
+placement choice.
 
 ## Usage
 
