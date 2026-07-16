@@ -158,9 +158,18 @@ a universal CPU ranking.
 ordered producer→consumer matrix for every logical CPU available to current
 process. It measures `Scalar API` separately, then every target-supported
 fixed width (`1..8` on x86_64/common Linux arm64; `1..16` with Apple 128-byte
-ARM batch staging). Diagonal cells are blank: a queue needs distinct producer
-and consumer threads. CSV rows also record socket/core/SMT data where Linux
-exposes it, hard-pin success, raw rounds, and median summaries.
+ARM batch staging). Diagonal cells are excluded: a queue needs distinct
+producer and consumer threads. CSV rows also record socket/core/SMT data where
+Linux exposes it, hard-pin success, raw rounds, and median summaries.
+
+All generated graphics use local embedded rainbow scale matching supplied
+reference: **blue = slow throughput; red = fast throughput**. Every graphic has
+its own labeled linear M-items/s legend. Matrix rows are producers and columns
+are consumers; striped diagonal means excluded self-pair, light gray means
+missing measurement. 3D graphic is static volumetric isometric cube: X producer
+CPU group, Y consumer CPU group, Z API/batch mode, color throughput. Large hosts
+use up to 12 contiguous CPU groups per dimension so cube stays readable; hover
+cell gives exact aggregated value and CSV remains exact per-path source.
 
 Quick calibrated local probe—four allowed logical CPUs, per-cell work scaled from
 a calibration pass to target at least 100 ms:

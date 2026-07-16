@@ -1,60 +1,62 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="900" height="440" viewBox="0 0 900 440">
-<style>text{font:13px sans-serif;fill:#172033}.title{font-size:20px;font-weight:bold}.small{font-size:11px}</style>
-<rect width="100%" height="100%" fill="#f8fafc"/>
-<text x="20" y="30" class="title">Batch-width depth — median across all ordered CPU pairs</text>
-<text x="20" y="52" class="small">advisory macOS affinity; no hard logical-CPU pinning. Error bars omitted: inspect CSV for every pair and round.</text>
-<line x1="70" y1="375" x2="870" y2="375" stroke="#334155"/><line x1="70" y1="375" x2="70" y2="60" stroke="#334155"/>
-<rect x="79.52941176470588" y="284.61467704375536" width="28" height="90.38532295624465" rx="3" fill="#14b8a6"/><title>Scalar: 351.17 M/s median</title>
-<text x="93.52941176470588" y="395" text-anchor="middle" class="small">Scalar</text>
-<text x="93.52941176470588" y="279.61467704375536" text-anchor="middle" class="small">351</text>
-<rect x="126.58823529411765" y="291.924138987621" width="28" height="83.07586101237898" rx="3" fill="#2563eb"/><title>1: 322.77 M/s median</title>
-<text x="140.58823529411765" y="395" text-anchor="middle" class="small">1</text>
-<text x="140.58823529411765" y="286.924138987621" text-anchor="middle" class="small">323</text>
-<rect x="173.6470588235294" y="211.49599215590146" width="28" height="163.50400784409854" rx="3" fill="#2563eb"/><title>2: 635.25 M/s median</title>
-<text x="187.6470588235294" y="395" text-anchor="middle" class="small">2</text>
-<text x="187.6470588235294" y="206.49599215590146" text-anchor="middle" class="small">635</text>
-<rect x="220.7058823529412" y="253.92157739919108" width="28" height="121.07842260080892" rx="3" fill="#2563eb"/><title>3: 470.42 M/s median</title>
-<text x="234.7058823529412" y="395" text-anchor="middle" class="small">3</text>
-<text x="234.7058823529412" y="248.92157739919108" text-anchor="middle" class="small">470</text>
-<rect x="267.7647058823529" y="248.73103321485473" width="28" height="126.26896678514527" rx="3" fill="#2563eb"/><title>4: 490.59 M/s median</title>
-<text x="281.7647058823529" y="395" text-anchor="middle" class="small">4</text>
-<text x="281.7647058823529" y="243.73103321485473" text-anchor="middle" class="small">491</text>
-<rect x="314.8235294117647" y="219.17402867998527" width="28" height="155.82597132001473" rx="3" fill="#2563eb"/><title>5: 605.42 M/s median</title>
-<text x="328.8235294117647" y="395" text-anchor="middle" class="small">5</text>
-<text x="328.8235294117647" y="214.17402867998527" text-anchor="middle" class="small">605</text>
-<rect x="361.88235294117646" y="206.0192364260326" width="28" height="168.9807635739674" rx="3" fill="#2563eb"/><title>6: 656.53 M/s median</title>
-<text x="375.88235294117646" y="395" text-anchor="middle" class="small">6</text>
-<text x="375.88235294117646" y="201.0192364260326" text-anchor="middle" class="small">657</text>
-<rect x="408.94117647058823" y="201.17551783306777" width="28" height="173.82448216693223" rx="3" fill="#2563eb"/><title>7: 675.35 M/s median</title>
-<text x="422.94117647058823" y="395" text-anchor="middle" class="small">7</text>
-<text x="422.94117647058823" y="196.17551783306777" text-anchor="middle" class="small">675</text>
-<rect x="456.0" y="129.60860399558766" width="28" height="245.39139600441234" rx="3" fill="#2563eb"/><title>8: 953.40 M/s median</title>
-<text x="470.0" y="395" text-anchor="middle" class="small">8</text>
-<text x="470.0" y="124.60860399558766" text-anchor="middle" class="small">953</text>
-<rect x="503.0588235294117" y="142.08518813580096" width="28" height="232.91481186419904" rx="3" fill="#2563eb"/><title>9: 904.93 M/s median</title>
-<text x="517.0588235294117" y="395" text-anchor="middle" class="small">9</text>
-<text x="517.0588235294117" y="137.08518813580096" text-anchor="middle" class="small">905</text>
-<rect x="550.1176470588235" y="104.22380193651179" width="28" height="270.7761980634882" rx="3" fill="#2563eb"/><title>10: 1052.03 M/s median</title>
-<text x="564.1176470588235" y="395" text-anchor="middle" class="small">10</text>
-<text x="564.1176470588235" y="99.22380193651179" text-anchor="middle" class="small">1052</text>
-<rect x="597.1764705882352" y="112.18727785267805" width="28" height="262.81272214732195" rx="3" fill="#2563eb"/><title>11: 1021.09 M/s median</title>
-<text x="611.1764705882352" y="395" text-anchor="middle" class="small">11</text>
-<text x="611.1764705882352" y="107.18727785267805" text-anchor="middle" class="small">1021</text>
-<rect x="644.2352941176471" y="69.31217060914321" width="28" height="305.6878293908568" rx="3" fill="#2563eb"/><title>12: 1187.67 M/s median</title>
-<text x="658.2352941176471" y="395" text-anchor="middle" class="small">12</text>
-<text x="658.2352941176471" y="64.31217060914321" text-anchor="middle" class="small">1188</text>
-<rect x="691.2941176470588" y="79.26780242676796" width="28" height="295.73219757323204" rx="3" fill="#2563eb"/><title>13: 1148.99 M/s median</title>
-<text x="705.2941176470588" y="395" text-anchor="middle" class="small">13</text>
-<text x="705.2941176470588" y="74.26780242676796" text-anchor="middle" class="small">1149</text>
-<rect x="738.3529411764706" y="65.3780487804878" width="28" height="309.6219512195122" rx="3" fill="#2563eb"/><title>14: 1202.95 M/s median</title>
-<text x="752.3529411764706" y="395" text-anchor="middle" class="small">14</text>
-<text x="752.3529411764706" y="60.3780487804878" text-anchor="middle" class="small">1203</text>
-<rect x="785.4117647058823" y="73.12403480818728" width="28" height="301.8759651918127" rx="3" fill="#2563eb"/><title>15: 1172.86 M/s median</title>
-<text x="799.4117647058823" y="395" text-anchor="middle" class="small">15</text>
-<text x="799.4117647058823" y="68.12403480818728" text-anchor="middle" class="small">1173</text>
-<rect x="832.4705882352941" y="60.0" width="28" height="315.0" rx="3" fill="#2563eb"/><title>16: 1223.85 M/s median</title>
-<text x="846.4705882352941" y="395" text-anchor="middle" class="small">16</text>
-<text x="846.4705882352941" y="55.0" text-anchor="middle" class="small">1224</text>
-<text x="70" y="422" class="small">Scalar API is not a batch width. Fixed widths begin at 1.</text>
-<text x="62" y="68" text-anchor="end" class="small">1224 M/s</text>
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="520" viewBox="0 0 900 520" role="img" aria-label="Batch mode comparison — topology distribution">
+<style>text{font-family:ui-sans-serif,system-ui,sans-serif;fill:#172033}.title{font-size:22px;font-weight:700}.subtitle{font-size:12px;fill:#475569}.axis{font-size:11px;font-weight:600}.tick{font-size:10px;fill:#475569}.note{font-size:10px;fill:#64748b}.legend-label{font-size:11px;font-weight:600}</style>
+<rect width="100%" height="100%" fill="#ffffff"/>
+<defs><linearGradient id="throughput-rainbow" x1="0" x2="1" y1="0" y2="0"><stop offset="0%" stop-color="#0000ff"/><stop offset="20%" stop-color="#00bfff"/><stop offset="40%" stop-color="#00ff00"/><stop offset="60%" stop-color="#ffff00"/><stop offset="80%" stop-color="#ff7f00"/><stop offset="100%" stop-color="#ff0000"/></linearGradient><pattern id="self-pair" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="8" height="8" fill="#dbe3ee"/><line x1="0" y1="0" x2="0" y2="8" stroke="#94a3b8" stroke-width="3"/></pattern></defs>
+<text x="28" y="32" class="title">Batch mode comparison — topology distribution</text>
+<text x="28" y="53" class="subtitle">Point: median across directed CPU pairs. Vertical whisker: min–max pair median. advisory macOS affinity; no hard logical-CPU pinning</text>
+<line x1="90" y1="405" x2="855" y2="405" stroke="#334155"/><line x1="90" y1="95" x2="90" y2="405" stroke="#334155"/>
+<line x1="90" y1="405.0" x2="855" y2="405.0" stroke="#e2e8f0"/><text x="81" y="409.0" text-anchor="end" class="tick">190</text>
+<line x1="90" y1="327.5" x2="855" y2="327.5" stroke="#e2e8f0"/><text x="81" y="331.5" text-anchor="end" class="tick">477</text>
+<line x1="90" y1="250.0" x2="855" y2="250.0" stroke="#e2e8f0"/><text x="81" y="254.0" text-anchor="end" class="tick">764</text>
+<line x1="90" y1="172.5" x2="855" y2="172.5" stroke="#e2e8f0"/><text x="81" y="176.5" text-anchor="end" class="tick">1051</text>
+<line x1="90" y1="95.0" x2="855" y2="95.0" stroke="#e2e8f0"/><text x="81" y="99.0" text-anchor="end" class="tick">1338</text>
+<line x1="112.5" y1="390.17064238715625" x2="112.5" y2="329.02292355419576" stroke="#64748b" stroke-width="2"/><line x1="105.5" y1="390.17064238715625" x2="119.5" y2="390.17064238715625" stroke="#64748b"/><line x1="105.5" y1="329.02292355419576" x2="119.5" y2="329.02292355419576" stroke="#64748b"/><circle cx="112.5" cy="361.40844727051416" r="7" fill="rgb(0,134,255)" stroke="#172033"><title>scalar: pair median 351.168; range 244.608–471.153 M items/s</title></circle>
+<text x="112.5" y="427" text-anchor="middle" class="tick">scalar</text>
+<line x1="157.5" y1="405.0" x2="157.5" y2="345.28768503273363" stroke="#64748b" stroke-width="2"/><line x1="150.5" y1="405.0" x2="164.5" y2="405.0" stroke="#64748b"/><line x1="150.5" y1="345.28768503273363" x2="164.5" y2="345.28768503273363" stroke="#64748b"/><circle cx="157.5" cy="369.0737414378418" r="7" fill="rgb(0,111,255)" stroke="#172033"><title>1: pair median 322.769; range 189.667–410.894 M items/s</title></circle>
+<text x="157.5" y="427" text-anchor="middle" class="tick">1</text>
+<line x1="202.5" y1="353.36702762615664" x2="202.5" y2="277.80534917758877" stroke="#64748b" stroke-width="2"/><line x1="195.5" y1="353.36702762615664" x2="209.5" y2="353.36702762615664" stroke="#64748b"/><line x1="195.5" y1="277.80534917758877" x2="209.5" y2="277.80534917758877" stroke="#64748b"/><circle cx="202.5" cy="284.73026861689857" r="7" fill="rgb(0,251,15)" stroke="#172033"><title>2: pair median 635.252; range 380.961–660.908 M items/s</title></circle>
+<text x="202.5" y="427" text-anchor="middle" class="tick">2</text>
+<line x1="247.5" y1="331.1663124405209" x2="247.5" y2="320.3168401228371" stroke="#64748b" stroke-width="2"/><line x1="240.5" y1="331.1663124405209" x2="254.5" y2="331.1663124405209" stroke="#64748b"/><line x1="240.5" y1="320.3168401228371" x2="254.5" y2="320.3168401228371" stroke="#64748b"/><circle cx="247.5" cy="329.2211755548261" r="7" fill="rgb(0,205,198)" stroke="#172033"><title>3: pair median 470.418; range 463.212–503.408 M items/s</title></circle>
+<text x="247.5" y="427" text-anchor="middle" class="tick">3</text>
+<line x1="292.5" y1="335.6169281497031" x2="292.5" y2="311.91009157057863" stroke="#64748b" stroke-width="2"/><line x1="285.5" y1="335.6169281497031" x2="299.5" y2="335.6169281497031" stroke="#64748b"/><line x1="285.5" y1="311.91009157057863" x2="299.5" y2="311.91009157057863" stroke="#64748b"/><circle cx="292.5" cy="323.7779502713509" r="7" fill="rgb(0,211,176)" stroke="#172033"><title>4: pair median 490.585; range 446.723–534.554 M items/s</title></circle>
+<text x="292.5" y="427" text-anchor="middle" class="tick">4</text>
+<line x1="337.5" y1="297.4097594019398" x2="337.5" y2="280.41353036491535" stroke="#64748b" stroke-width="2"/><line x1="330.5" y1="297.4097594019398" x2="344.5" y2="297.4097594019398" stroke="#64748b"/><line x1="330.5" y1="280.41353036491535" x2="344.5" y2="280.41353036491535" stroke="#64748b"/><circle cx="337.5" cy="292.7820799590427" r="7" fill="rgb(0,243,48)" stroke="#172033"><title>5: pair median 605.421; range 588.276–651.245 M items/s</title></circle>
+<text x="337.5" y="427" text-anchor="middle" class="tick">5</text>
+<line x1="382.5" y1="284.3791102059794" x2="382.5" y2="265.60549597610134" stroke="#64748b" stroke-width="2"/><line x1="375.5" y1="284.3791102059794" x2="389.5" y2="284.3791102059794" stroke="#64748b"/><line x1="375.5" y1="265.60549597610134" x2="389.5" y2="265.60549597610134" stroke="#64748b"/><circle cx="382.5" cy="278.98689871163845" r="7" fill="rgb(8,255,0)" stroke="#172033"><title>6: pair median 656.531; range 636.553–706.107 M items/s</title></circle>
+<text x="382.5" y="427" text-anchor="middle" class="tick">6</text>
+<line x1="427.5" y1="279.46424202425226" x2="427.5" y2="263.8070574734461" stroke="#64748b" stroke-width="2"/><line x1="420.5" y1="279.46424202425226" x2="434.5" y2="279.46424202425226" stroke="#64748b"/><line x1="420.5" y1="263.8070574734461" x2="434.5" y2="263.8070574734461" stroke="#64748b"/><circle cx="427.5" cy="273.90738285069483" r="7" fill="rgb(29,255,0)" stroke="#172033"><title>7: pair median 675.350; range 654.762–712.770 M items/s</title></circle>
+<text x="427.5" y="427" text-anchor="middle" class="tick">7</text>
+<line x1="472.5" y1="211.3918736662102" x2="472.5" y2="176.63825746857026" stroke="#64748b" stroke-width="2"/><line x1="465.5" y1="211.3918736662102" x2="479.5" y2="211.3918736662102" stroke="#64748b"/><line x1="465.5" y1="176.63825746857026" x2="479.5" y2="176.63825746857026" stroke="#64748b"/><circle cx="472.5" cy="198.8565170790405" r="7" fill="rgb(255,213,0)" stroke="#172033"><title>8: pair median 953.404; range 906.962–1035.720 M items/s</title></circle>
+<text x="472.5" y="427" text-anchor="middle" class="tick">8</text>
+<line x1="517.5" y1="223.55339904728987" x2="517.5" y2="191.07785893585884" stroke="#64748b" stroke-width="2"/><line x1="510.5" y1="223.55339904728987" x2="524.5" y2="223.55339904728987" stroke="#64748b"/><line x1="510.5" y1="191.07785893585884" x2="524.5" y2="191.07785893585884" stroke="#64748b"/><circle cx="517.5" cy="211.94047433507507" r="7" fill="rgb(255,240,0)" stroke="#172033"><title>9: pair median 904.929; range 861.905–982.223 M items/s</title></circle>
+<text x="517.5" y="427" text-anchor="middle" class="tick">9</text>
+<line x1="562.5" y1="192.90679774630328" x2="562.5" y2="143.3767271245515" stroke="#64748b" stroke-width="2"/><line x1="555.5" y1="192.90679774630328" x2="569.5" y2="192.90679774630328" stroke="#64748b"/><line x1="555.5" y1="143.3767271245515" x2="569.5" y2="143.3767271245515" stroke="#64748b"/><circle cx="562.5" cy="172.23595640624012" r="7" fill="rgb(255,158,0)" stroke="#172033"><title>10: pair median 1052.030; range 975.447–1158.950 M items/s</title></circle>
+<text x="562.5" y="427" text-anchor="middle" class="tick">10</text>
+<line x1="607.5" y1="196.64403015029004" x2="607.5" y2="154.91016209655447" stroke="#64748b" stroke-width="2"/><line x1="600.5" y1="196.64403015029004" x2="614.5" y2="196.64403015029004" stroke="#64748b"/><line x1="600.5" y1="154.91016209655447" x2="614.5" y2="154.91016209655447" stroke="#64748b"/><circle cx="607.5" cy="180.58710262748446" r="7" fill="rgb(255,176,0)" stroke="#172033"><title>11: pair median 1021.090; range 961.601–1116.220 M items/s</title></circle>
+<text x="607.5" y="427" text-anchor="middle" class="tick">11</text>
+<line x1="652.5" y1="159.9440624529283" x2="652.5" y2="104.13389748309338" stroke="#64748b" stroke-width="2"/><line x1="645.5" y1="159.9440624529283" x2="659.5" y2="159.9440624529283" stroke="#64748b"/><line x1="645.5" y1="104.13389748309338" x2="659.5" y2="104.13389748309338" stroke="#64748b"/><circle cx="652.5" cy="135.62479048996397" r="7" fill="rgb(255,83,0)" stroke="#172033"><title>12: pair median 1187.670; range 1097.570–1304.340 M items/s</title></circle>
+<text x="652.5" y="427" text-anchor="middle" class="tick">12</text>
+<line x1="697.5" y1="168.6541945977103" x2="697.5" y2="120.85778306383993" stroke="#64748b" stroke-width="2"/><line x1="690.5" y1="168.6541945977103" x2="704.5" y2="168.6541945977103" stroke="#64748b"/><line x1="690.5" y1="120.85778306383993" x2="704.5" y2="120.85778306383993" stroke="#64748b"/><circle cx="697.5" cy="146.06507283766055" r="7" fill="rgb(255,105,0)" stroke="#172033"><title>13: pair median 1148.990; range 1065.300–1242.380 M items/s</title></circle>
+<text x="697.5" y="427" text-anchor="middle" class="tick">13</text>
+<line x1="742.5" y1="152.21641809888092" x2="742.5" y2="99.76128698586786" stroke="#64748b" stroke-width="2"/><line x1="735.5" y1="152.21641809888092" x2="749.5" y2="152.21641809888092" stroke="#64748b"/><line x1="735.5" y1="99.76128698586786" x2="749.5" y2="99.76128698586786" stroke="#64748b"/><circle cx="742.5" cy="131.49915151156327" r="7" fill="rgb(255,75,0)" stroke="#172033"><title>14: pair median 1202.955; range 1126.200–1320.540 M items/s</title></circle>
+<text x="742.5" y="427" text-anchor="middle" class="tick">14</text>
+<line x1="787.5" y1="157.66058808215496" x2="787.5" y2="112.7252673674569" stroke="#64748b" stroke-width="2"/><line x1="780.5" y1="157.66058808215496" x2="794.5" y2="157.66058808215496" stroke="#64748b"/><line x1="780.5" y1="112.7252673674569" x2="794.5" y2="112.7252673674569" stroke="#64748b"/><circle cx="787.5" cy="139.62222020995853" r="7" fill="rgb(255,91,0)" stroke="#172033"><title>15: pair median 1172.860; range 1106.030–1272.510 M items/s</title></circle>
+<text x="787.5" y="427" text-anchor="middle" class="tick">15</text>
+<line x1="832.5" y1="142.04335083712593" x2="832.5" y2="95.0" stroke="#64748b" stroke-width="2"/><line x1="825.5" y1="142.04335083712593" x2="839.5" y2="142.04335083712593" stroke="#64748b"/><line x1="825.5" y1="95.0" x2="839.5" y2="95.0" stroke="#64748b"/><circle cx="832.5" cy="125.85929371282697" r="7" fill="rgb(255,63,0)" stroke="#172033"><title>16: pair median 1223.850; range 1163.890–1338.180 M items/s</title></circle>
+<text x="832.5" y="427" text-anchor="middle" class="tick">16</text>
+<text x="90" y="77" class="axis">M items/s</text>
+<text x="472.5" y="494" text-anchor="middle" class="axis">API mode / fixed batch width</text>
+<text x="595" y="64" class="legend-label">Point color: pair median (M items/s)</text>
+<rect x="595" y="72" width="250" height="16" rx="2" fill="url(#throughput-rainbow)" stroke="#475569"/>
+<line x1="595" y1="88" x2="595" y2="93" stroke="#334155"/>
+<text x="595" y="107" text-anchor="middle" class="tick">190</text>
+<line x1="657.5" y1="88" x2="657.5" y2="93" stroke="#334155"/>
+<text x="657.5" y="107" text-anchor="middle" class="tick">477</text>
+<line x1="720.0" y1="88" x2="720.0" y2="93" stroke="#334155"/>
+<text x="720.0" y="107" text-anchor="middle" class="tick">764</text>
+<line x1="782.5" y1="88" x2="782.5" y2="93" stroke="#334155"/>
+<text x="782.5" y="107" text-anchor="middle" class="tick">1051</text>
+<line x1="845" y1="88" x2="845" y2="93" stroke="#334155"/>
+<text x="845" y="107" text-anchor="middle" class="tick">1338</text>
+<text x="595" y="123" class="note">Slowest = blue · fastest = red · linear scale for this view</text>
 </svg>

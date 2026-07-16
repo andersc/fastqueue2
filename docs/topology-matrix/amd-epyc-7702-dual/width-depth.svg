@@ -1,36 +1,46 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="900" height="440" viewBox="0 0 900 440">
-<style>text{font:13px sans-serif;fill:#172033}.title{font-size:20px;font-weight:bold}.small{font-size:11px}</style>
-<rect width="100%" height="100%" fill="#f8fafc"/>
-<text x="20" y="30" class="title">Batch-width depth — median across all ordered CPU pairs</text>
-<text x="20" y="52" class="small">hard Linux logical-CPU pinning. Error bars omitted: inspect CSV for every pair and round.</text>
-<line x1="70" y1="375" x2="870" y2="375" stroke="#334155"/><line x1="70" y1="375" x2="70" y2="60" stroke="#334155"/>
-<rect x="100.44444444444444" y="269.26887847606486" width="28" height="105.73112152393512" rx="3" fill="#14b8a6"/><title>Scalar: 299.35 M/s median</title>
-<text x="114.44444444444444" y="395" text-anchor="middle" class="small">Scalar</text>
-<text x="114.44444444444444" y="264.26887847606486" text-anchor="middle" class="small">299</text>
-<rect x="189.33333333333334" y="269.450952459441" width="28" height="105.549047540559" rx="3" fill="#2563eb"/><title>1: 298.84 M/s median</title>
-<text x="203.33333333333334" y="395" text-anchor="middle" class="small">1</text>
-<text x="203.33333333333334" y="264.450952459441" text-anchor="middle" class="small">299</text>
-<rect x="278.22222222222223" y="250.92020061692057" width="28" height="124.07979938307942" rx="3" fill="#2563eb"/><title>2: 351.30 M/s median</title>
-<text x="292.22222222222223" y="395" text-anchor="middle" class="small">2</text>
-<text x="292.22222222222223" y="245.92020061692057" text-anchor="middle" class="small">351</text>
-<rect x="367.1111111111111" y="202.42494525418542" width="28" height="172.57505474581458" rx="3" fill="#2563eb"/><title>3: 488.61 M/s median</title>
-<text x="381.1111111111111" y="395" text-anchor="middle" class="small">3</text>
-<text x="381.1111111111111" y="197.42494525418542" text-anchor="middle" class="small">489</text>
-<rect x="456.0" y="96.08384939603008" width="28" height="278.9161506039699" rx="3" fill="#2563eb"/><title>4: 789.69 M/s median</title>
-<text x="470.0" y="395" text-anchor="middle" class="small">4</text>
-<text x="470.0" y="91.08384939603008" text-anchor="middle" class="small">790</text>
-<rect x="544.8888888888889" y="129.52789093220935" width="28" height="245.47210906779065" rx="3" fill="#2563eb"/><title>5: 695.00 M/s median</title>
-<text x="558.8888888888889" y="395" text-anchor="middle" class="small">5</text>
-<text x="558.8888888888889" y="124.52789093220935" text-anchor="middle" class="small">695</text>
-<rect x="633.7777777777778" y="117.9396147778379" width="28" height="257.0603852221621" rx="3" fill="#2563eb"/><title>6: 727.81 M/s median</title>
-<text x="647.7777777777778" y="395" text-anchor="middle" class="small">6</text>
-<text x="647.7777777777778" y="112.9396147778379" text-anchor="middle" class="small">728</text>
-<rect x="722.6666666666666" y="115.53768631236903" width="28" height="259.46231368763097" rx="3" fill="#2563eb"/><title>7: 734.61 M/s median</title>
-<text x="736.6666666666666" y="395" text-anchor="middle" class="small">7</text>
-<text x="736.6666666666666" y="110.53768631236903" text-anchor="middle" class="small">735</text>
-<rect x="811.5555555555555" y="60.0" width="28" height="315.0" rx="3" fill="#2563eb"/><title>8: 891.85 M/s median</title>
-<text x="825.5555555555555" y="395" text-anchor="middle" class="small">8</text>
-<text x="825.5555555555555" y="55.0" text-anchor="middle" class="small">892</text>
-<text x="70" y="422" class="small">Scalar API is not a batch width. Fixed widths begin at 1.</text>
-<text x="62" y="68" text-anchor="end" class="small">892 M/s</text>
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="520" viewBox="0 0 900 520" role="img" aria-label="Batch mode comparison — topology distribution">
+<style>text{font-family:ui-sans-serif,system-ui,sans-serif;fill:#172033}.title{font-size:22px;font-weight:700}.subtitle{font-size:12px;fill:#475569}.axis{font-size:11px;font-weight:600}.tick{font-size:10px;fill:#475569}.note{font-size:10px;fill:#64748b}.legend-label{font-size:11px;font-weight:600}</style>
+<rect width="100%" height="100%" fill="#ffffff"/>
+<defs><linearGradient id="throughput-rainbow" x1="0" x2="1" y1="0" y2="0"><stop offset="0%" stop-color="#0000ff"/><stop offset="20%" stop-color="#00bfff"/><stop offset="40%" stop-color="#00ff00"/><stop offset="60%" stop-color="#ffff00"/><stop offset="80%" stop-color="#ff7f00"/><stop offset="100%" stop-color="#ff0000"/></linearGradient><pattern id="self-pair" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="8" height="8" fill="#dbe3ee"/><line x1="0" y1="0" x2="0" y2="8" stroke="#94a3b8" stroke-width="3"/></pattern></defs>
+<text x="28" y="32" class="title">Batch mode comparison — topology distribution</text>
+<text x="28" y="53" class="subtitle">Point: median across directed CPU pairs. Vertical whisker: min–max pair median. hard Linux logical-CPU pinning</text>
+<line x1="90" y1="405" x2="855" y2="405" stroke="#334155"/><line x1="90" y1="95" x2="90" y2="405" stroke="#334155"/>
+<line x1="90" y1="405.0" x2="855" y2="405.0" stroke="#e2e8f0"/><text x="81" y="409.0" text-anchor="end" class="tick">297</text>
+<line x1="90" y1="327.5" x2="855" y2="327.5" stroke="#e2e8f0"/><text x="81" y="331.5" text-anchor="end" class="tick">452</text>
+<line x1="90" y1="250.00000000000003" x2="855" y2="250.00000000000003" stroke="#e2e8f0"/><text x="81" y="254.00000000000003" text-anchor="end" class="tick">608</text>
+<line x1="90" y1="172.5" x2="855" y2="172.5" stroke="#e2e8f0"/><text x="81" y="176.5" text-anchor="end" class="tick">764</text>
+<line x1="90" y1="95.0" x2="855" y2="95.0" stroke="#e2e8f0"/><text x="81" y="99.0" text-anchor="end" class="tick">920</text>
+<line x1="132.5" y1="405.0" x2="132.5" y2="403.028908063879" stroke="#64748b" stroke-width="2"/><line x1="125.5" y1="405.0" x2="139.5" y2="405.0" stroke="#64748b"/><line x1="125.5" y1="403.028908063879" x2="139.5" y2="403.028908063879" stroke="#64748b"/><circle cx="132.5" cy="403.67946795289674" r="7" fill="rgb(0,4,255)" stroke="#172033"><title>scalar: pair median 299.353; range 296.700–300.660 M items/s</title></circle>
+<text x="132.5" y="427" text-anchor="middle" class="tick">scalar</text>
+<line x1="217.5" y1="404.36039062173853" x2="217.5" y2="402.80392484288745" stroke="#64748b" stroke-width="2"/><line x1="210.5" y1="404.36039062173853" x2="224.5" y2="404.36039062173853" stroke="#64748b"/><line x1="210.5" y1="402.80392484288745" x2="224.5" y2="402.80392484288745" stroke="#64748b"/><circle cx="217.5" cy="403.9360583299347" r="7" fill="rgb(0,3,255)" stroke="#172033"><title>1: pair median 298.837; range 297.985–301.112 M items/s</title></circle>
+<text x="217.5" y="427" text-anchor="middle" class="tick">1</text>
+<line x1="302.5" y1="378.4027026245901" x2="302.5" y2="376.55953256412147" stroke="#64748b" stroke-width="2"/><line x1="295.5" y1="378.4027026245901" x2="309.5" y2="378.4027026245901" stroke="#64748b"/><line x1="295.5" y1="376.55953256412147" x2="309.5" y2="376.55953256412147" stroke="#64748b"/><circle cx="302.5" cy="377.8213300535323" r="7" fill="rgb(0,84,255)" stroke="#172033"><title>2: pair median 351.303; range 350.135–353.838 M items/s</title></circle>
+<text x="302.5" y="427" text-anchor="middle" class="tick">2</text>
+<line x1="387.5" y1="311.8738700261078" x2="387.5" y2="307.0436992816336" stroke="#64748b" stroke-width="2"/><line x1="380.5" y1="311.8738700261078" x2="394.5" y2="311.8738700261078" stroke="#64748b"/><line x1="380.5" y1="307.0436992816336" x2="394.5" y2="307.0436992816336" stroke="#64748b"/><circle cx="387.5" cy="309.47869467342747" r="7" fill="rgb(0,226,117)" stroke="#172033"><title>3: pair median 488.606; range 483.794–493.498 M items/s</title></circle>
+<text x="387.5" y="427" text-anchor="middle" class="tick">3</text>
+<line x1="472.5" y1="162.23563829274786" x2="472.5" y2="153.9421196463723" stroke="#64748b" stroke-width="2"/><line x1="465.5" y1="162.23563829274786" x2="479.5" y2="162.23563829274786" stroke="#64748b"/><line x1="465.5" y1="153.9421196463723" x2="479.5" y2="153.9421196463723" stroke="#64748b"/><circle cx="472.5" cy="159.61597746956497" r="7" fill="rgb(255,132,0)" stroke="#172033"><title>4: pair median 789.686; range 784.423–801.085 M items/s</title></circle>
+<text x="472.5" y="427" text-anchor="middle" class="tick">4</text>
+<line x1="557.5" y1="213.95191409147685" x2="557.5" y2="202.7943391318589" stroke="#64748b" stroke-width="2"/><line x1="550.5" y1="213.95191409147685" x2="564.5" y2="213.95191409147685" stroke="#64748b"/><line x1="550.5" y1="202.7943391318589" x2="564.5" y2="202.7943391318589" stroke="#64748b"/><circle cx="557.5" cy="206.747473514857" r="7" fill="rgb(255,230,0)" stroke="#172033"><title>5: pair median 694.997; range 680.523–702.939 M items/s</title></circle>
+<text x="557.5" y="427" text-anchor="middle" class="tick">5</text>
+<line x1="642.5" y1="193.01652852752557" x2="642.5" y2="184.19191010947293" stroke="#64748b" stroke-width="2"/><line x1="635.5" y1="193.01652852752557" x2="649.5" y2="193.01652852752557" stroke="#64748b"/><line x1="635.5" y1="184.19191010947293" x2="649.5" y2="184.19191010947293" stroke="#64748b"/><circle cx="642.5" cy="190.4165288486549" r="7" fill="rgb(255,196,0)" stroke="#172033"><title>6: pair median 727.807; range 722.583–740.312 M items/s</title></circle>
+<text x="642.5" y="427" text-anchor="middle" class="tick">6</text>
+<line x1="727.5" y1="197.5271434581135" x2="727.5" y2="178.69574921082454" stroke="#64748b" stroke-width="2"/><line x1="720.5" y1="197.5271434581135" x2="734.5" y2="197.5271434581135" stroke="#64748b"/><line x1="720.5" y1="178.69574921082454" x2="734.5" y2="178.69574921082454" stroke="#64748b"/><circle cx="727.5" cy="187.03157664875835" r="7" fill="rgb(255,189,0)" stroke="#172033"><title>7: pair median 734.607; range 713.521–751.354 M items/s</title></circle>
+<text x="727.5" y="427" text-anchor="middle" class="tick">7</text>
+<line x1="812.5" y1="136.1943282134611" x2="812.5" y2="95.0" stroke="#64748b" stroke-width="2"/><line x1="805.5" y1="136.1943282134611" x2="819.5" y2="136.1943282134611" stroke="#64748b"/><line x1="805.5" y1="95.0" x2="819.5" y2="95.0" stroke="#64748b"/><circle cx="812.5" cy="108.76429427008907" r="7" fill="rgb(255,28,0)" stroke="#172033"><title>8: pair median 891.849; range 836.741–919.502 M items/s</title></circle>
+<text x="812.5" y="427" text-anchor="middle" class="tick">8</text>
+<text x="90" y="77" class="axis">M items/s</text>
+<text x="472.5" y="494" text-anchor="middle" class="axis">API mode / fixed batch width</text>
+<text x="595" y="64" class="legend-label">Point color: pair median (M items/s)</text>
+<rect x="595" y="72" width="250" height="16" rx="2" fill="url(#throughput-rainbow)" stroke="#475569"/>
+<line x1="595" y1="88" x2="595" y2="93" stroke="#334155"/>
+<text x="595" y="107" text-anchor="middle" class="tick">297</text>
+<line x1="657.5" y1="88" x2="657.5" y2="93" stroke="#334155"/>
+<text x="657.5" y="107" text-anchor="middle" class="tick">452</text>
+<line x1="720.0" y1="88" x2="720.0" y2="93" stroke="#334155"/>
+<text x="720.0" y="107" text-anchor="middle" class="tick">608</text>
+<line x1="782.5" y1="88" x2="782.5" y2="93" stroke="#334155"/>
+<text x="782.5" y="107" text-anchor="middle" class="tick">764</text>
+<line x1="845" y1="88" x2="845" y2="93" stroke="#334155"/>
+<text x="845" y="107" text-anchor="middle" class="tick">920</text>
+<text x="595" y="123" class="note">Slowest = blue · fastest = red · linear scale for this view</text>
 </svg>

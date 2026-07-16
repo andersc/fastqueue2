@@ -1,219 +1,143 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="780" height="770" viewBox="0 0 780 770">
-<style>text{font:12px sans-serif;fill:#172033}.small{font-size:10px}.title{font-size:20px;font-weight:bold}</style>
-<rect width="100%" height="100%" fill="#f8fafc"/>
-<text x="20" y="30" class="title">FastQueue topology matrix — Fixed batch 16</text>
-<text x="20" y="52" class="small">Color: relative median throughput (M items/s). advisory macOS affinity; no hard logical-CPU pinning.</text>
-<text x="20" y="75" class="small">Rows: producer logical CPU. Columns: consumer logical CPU. Diagonal intentionally blank.</text>
-<text x="180.0" y="92" text-anchor="middle" class="small">0</text>
-<text x="142" y="133.0" text-anchor="end" class="small">0</text>
-<text x="240.0" y="92" text-anchor="middle" class="small">1</text>
-<text x="142" y="193.0" text-anchor="end" class="small">1</text>
-<text x="300.0" y="92" text-anchor="middle" class="small">2</text>
-<text x="142" y="253.0" text-anchor="end" class="small">2</text>
-<text x="360.0" y="92" text-anchor="middle" class="small">3</text>
-<text x="142" y="313.0" text-anchor="end" class="small">3</text>
-<text x="420.0" y="92" text-anchor="middle" class="small">4</text>
-<text x="142" y="373.0" text-anchor="end" class="small">4</text>
-<text x="480.0" y="92" text-anchor="middle" class="small">5</text>
-<text x="142" y="433.0" text-anchor="end" class="small">5</text>
-<text x="540.0" y="92" text-anchor="middle" class="small">6</text>
-<text x="142" y="493.0" text-anchor="end" class="small">6</text>
-<text x="600.0" y="92" text-anchor="middle" class="small">7</text>
-<text x="142" y="553.0" text-anchor="end" class="small">7</text>
-<text x="660.0" y="92" text-anchor="middle" class="small">8</text>
-<text x="142" y="613.0" text-anchor="end" class="small">8</text>
-<text x="720.0" y="92" text-anchor="middle" class="small">9</text>
-<text x="142" y="673.0" text-anchor="end" class="small">9</text>
-<rect x="150" y="100" width="59" height="59" fill="#cbd5e1"/>
-<rect x="210" y="100" width="59" height="59" fill="rgb(155,126,68)"/>
-<title>P0 → C1: 1269.65 M/s</title>
-<rect x="270" y="100" width="59" height="59" fill="rgb(242,185,55)"/>
-<title>P0 → C2: 1338.18 M/s</title>
-<rect x="330" y="100" width="59" height="59" fill="rgb(103,90,77)"/>
-<title>P0 → C3: 1228.09 M/s</title>
-<rect x="390" y="100" width="59" height="59" fill="rgb(122,103,73)"/>
-<title>P0 → C4: 1243.75 M/s</title>
-<rect x="450" y="100" width="59" height="59" fill="rgb(88,80,79)"/>
-<title>P0 → C5: 1216.78 M/s</title>
-<rect x="510" y="100" width="59" height="59" fill="rgb(86,78,79)"/>
-<title>P0 → C6: 1214.67 M/s</title>
-<rect x="570" y="100" width="59" height="59" fill="rgb(138,114,71)"/>
-<title>P0 → C7: 1256.49 M/s</title>
-<rect x="630" y="100" width="59" height="59" fill="rgb(96,86,78)"/>
-<title>P0 → C8: 1223.26 M/s</title>
-<rect x="690" y="100" width="59" height="59" fill="rgb(100,88,77)"/>
-<title>P0 → C9: 1226.00 M/s</title>
-<rect x="150" y="160" width="59" height="59" fill="rgb(123,104,73)"/>
-<title>P1 → C0: 1244.56 M/s</title>
-<rect x="210" y="160" width="59" height="59" fill="#cbd5e1"/>
-<rect x="270" y="160" width="59" height="59" fill="rgb(144,118,70)"/>
-<title>P1 → C2: 1260.98 M/s</title>
-<rect x="330" y="160" width="59" height="59" fill="rgb(100,88,77)"/>
-<title>P1 → C3: 1226.24 M/s</title>
-<rect x="390" y="160" width="59" height="59" fill="rgb(74,70,81)"/>
-<title>P1 → C4: 1205.19 M/s</title>
-<rect x="450" y="160" width="59" height="59" fill="rgb(92,82,78)"/>
-<title>P1 → C5: 1219.38 M/s</title>
-<rect x="510" y="160" width="59" height="59" fill="rgb(109,94,76)"/>
-<title>P1 → C6: 1232.88 M/s</title>
-<rect x="570" y="160" width="59" height="59" fill="rgb(72,69,82)"/>
-<title>P1 → C7: 1203.68 M/s</title>
-<rect x="630" y="160" width="59" height="59" fill="rgb(45,50,86)"/>
-<title>P1 → C8: 1182.13 M/s</title>
-<rect x="690" y="160" width="59" height="59" fill="rgb(117,99,74)"/>
-<title>P1 → C9: 1239.18 M/s</title>
-<rect x="150" y="220" width="59" height="59" fill="rgb(101,88,77)"/>
-<title>P2 → C0: 1226.58 M/s</title>
-<rect x="210" y="220" width="59" height="59" fill="rgb(102,89,77)"/>
-<title>P2 → C1: 1227.54 M/s</title>
-<rect x="270" y="220" width="59" height="59" fill="#cbd5e1"/>
-<rect x="330" y="220" width="59" height="59" fill="rgb(215,166,59)"/>
-<title>P2 → C3: 1317.02 M/s</title>
-<rect x="390" y="220" width="59" height="59" fill="rgb(87,79,79)"/>
-<title>P2 → C4: 1215.41 M/s</title>
-<rect x="450" y="220" width="59" height="59" fill="rgb(90,81,79)"/>
-<title>P2 → C5: 1218.23 M/s</title>
-<rect x="510" y="220" width="59" height="59" fill="rgb(77,73,81)"/>
-<title>P2 → C6: 1208.19 M/s</title>
-<rect x="570" y="220" width="59" height="59" fill="rgb(209,162,60)"/>
-<title>P2 → C7: 1312.12 M/s</title>
-<rect x="630" y="220" width="59" height="59" fill="rgb(90,81,79)"/>
-<title>P2 → C8: 1218.06 M/s</title>
-<rect x="690" y="220" width="59" height="59" fill="rgb(97,86,77)"/>
-<title>P2 → C9: 1223.81 M/s</title>
-<rect x="150" y="280" width="59" height="59" fill="rgb(133,111,72)"/>
-<title>P3 → C0: 1252.49 M/s</title>
-<rect x="210" y="280" width="59" height="59" fill="rgb(103,90,77)"/>
-<title>P3 → C1: 1228.53 M/s</title>
-<rect x="270" y="280" width="59" height="59" fill="rgb(111,96,75)"/>
-<title>P3 → C2: 1235.08 M/s</title>
-<rect x="330" y="280" width="59" height="59" fill="#cbd5e1"/>
-<rect x="390" y="280" width="59" height="59" fill="rgb(107,93,76)"/>
-<title>P3 → C4: 1231.82 M/s</title>
-<rect x="450" y="280" width="59" height="59" fill="rgb(126,106,73)"/>
-<title>P3 → C5: 1246.50 M/s</title>
-<rect x="510" y="280" width="59" height="59" fill="rgb(97,86,77)"/>
-<title>P3 → C6: 1223.75 M/s</title>
-<rect x="570" y="280" width="59" height="59" fill="rgb(104,91,76)"/>
-<title>P3 → C7: 1229.49 M/s</title>
-<rect x="630" y="280" width="59" height="59" fill="rgb(82,76,80)"/>
-<title>P3 → C8: 1211.58 M/s</title>
-<rect x="690" y="280" width="59" height="59" fill="rgb(97,86,77)"/>
-<title>P3 → C9: 1223.89 M/s</title>
-<rect x="150" y="340" width="59" height="59" fill="rgb(66,65,82)"/>
-<title>P4 → C0: 1198.81 M/s</title>
-<rect x="210" y="340" width="59" height="59" fill="rgb(101,88,77)"/>
-<title>P4 → C1: 1226.53 M/s</title>
-<rect x="270" y="340" width="59" height="59" fill="rgb(74,71,81)"/>
-<title>P4 → C2: 1205.75 M/s</title>
-<rect x="330" y="340" width="59" height="59" fill="rgb(24,36,89)"/>
-<title>P4 → C3: 1166.00 M/s</title>
-<rect x="390" y="340" width="59" height="59" fill="#cbd5e1"/>
-<rect x="450" y="340" width="59" height="59" fill="rgb(90,81,79)"/>
-<title>P4 → C5: 1218.00 M/s</title>
-<rect x="510" y="340" width="59" height="59" fill="rgb(70,67,82)"/>
-<title>P4 → C6: 1201.92 M/s</title>
-<rect x="570" y="340" width="59" height="59" fill="rgb(79,74,80)"/>
-<title>P4 → C7: 1209.49 M/s</title>
-<rect x="630" y="340" width="59" height="59" fill="rgb(52,55,85)"/>
-<title>P4 → C8: 1188.05 M/s</title>
-<rect x="690" y="340" width="59" height="59" fill="rgb(107,93,76)"/>
-<title>P4 → C9: 1231.74 M/s</title>
-<rect x="150" y="400" width="59" height="59" fill="rgb(76,72,81)"/>
-<title>P5 → C0: 1207.24 M/s</title>
-<rect x="210" y="400" width="59" height="59" fill="rgb(144,118,70)"/>
-<title>P5 → C1: 1260.80 M/s</title>
-<rect x="270" y="400" width="59" height="59" fill="rgb(93,83,78)"/>
-<title>P5 → C2: 1220.15 M/s</title>
-<rect x="330" y="400" width="59" height="59" fill="rgb(109,94,76)"/>
-<title>P5 → C3: 1233.14 M/s</title>
-<rect x="390" y="400" width="59" height="59" fill="rgb(120,101,74)"/>
-<title>P5 → C4: 1241.61 M/s</title>
-<rect x="450" y="400" width="59" height="59" fill="#cbd5e1"/>
-<rect x="510" y="400" width="59" height="59" fill="rgb(108,93,76)"/>
-<title>P5 → C6: 1232.12 M/s</title>
-<rect x="570" y="400" width="59" height="59" fill="rgb(84,77,80)"/>
-<title>P5 → C7: 1213.13 M/s</title>
-<rect x="630" y="400" width="59" height="59" fill="rgb(110,95,75)"/>
-<title>P5 → C8: 1234.26 M/s</title>
-<rect x="690" y="400" width="59" height="59" fill="rgb(121,102,74)"/>
-<title>P5 → C9: 1242.89 M/s</title>
-<rect x="150" y="460" width="59" height="59" fill="rgb(28,39,88)"/>
-<title>P6 → C0: 1169.08 M/s</title>
-<rect x="210" y="460" width="59" height="59" fill="rgb(81,75,80)"/>
-<title>P6 → C1: 1211.10 M/s</title>
-<rect x="270" y="460" width="59" height="59" fill="rgb(88,80,79)"/>
-<title>P6 → C2: 1216.35 M/s</title>
-<rect x="330" y="460" width="59" height="59" fill="rgb(91,82,78)"/>
-<title>P6 → C3: 1218.89 M/s</title>
-<rect x="390" y="460" width="59" height="59" fill="rgb(71,68,82)"/>
-<title>P6 → C4: 1203.21 M/s</title>
-<rect x="450" y="460" width="59" height="59" fill="rgb(77,73,81)"/>
-<title>P6 → C5: 1208.16 M/s</title>
-<rect x="510" y="460" width="59" height="59" fill="#cbd5e1"/>
-<rect x="570" y="460" width="59" height="59" fill="rgb(82,75,80)"/>
-<title>P6 → C7: 1211.49 M/s</title>
-<rect x="630" y="460" width="59" height="59" fill="rgb(95,84,78)"/>
-<title>P6 → C8: 1221.76 M/s</title>
-<rect x="690" y="460" width="59" height="59" fill="rgb(107,93,76)"/>
-<title>P6 → C9: 1231.71 M/s</title>
-<rect x="150" y="520" width="59" height="59" fill="rgb(106,92,76)"/>
-<title>P7 → C0: 1230.86 M/s</title>
-<rect x="210" y="520" width="59" height="59" fill="rgb(100,88,77)"/>
-<title>P7 → C1: 1226.15 M/s</title>
-<rect x="270" y="520" width="59" height="59" fill="rgb(83,76,80)"/>
-<title>P7 → C2: 1212.26 M/s</title>
-<rect x="330" y="520" width="59" height="59" fill="rgb(128,107,73)"/>
-<title>P7 → C3: 1247.88 M/s</title>
-<rect x="390" y="520" width="59" height="59" fill="rgb(86,79,79)"/>
-<title>P7 → C4: 1215.27 M/s</title>
-<rect x="450" y="520" width="59" height="59" fill="rgb(66,65,82)"/>
-<title>P7 → C5: 1199.12 M/s</title>
-<rect x="510" y="520" width="59" height="59" fill="rgb(118,100,74)"/>
-<title>P7 → C6: 1240.01 M/s</title>
-<rect x="570" y="520" width="59" height="59" fill="#cbd5e1"/>
-<rect x="630" y="520" width="59" height="59" fill="rgb(94,84,78)"/>
-<title>P7 → C8: 1221.59 M/s</title>
-<rect x="690" y="520" width="59" height="59" fill="rgb(104,91,76)"/>
-<title>P7 → C9: 1228.99 M/s</title>
-<rect x="150" y="580" width="59" height="59" fill="rgb(158,128,68)"/>
-<title>P8 → C0: 1272.23 M/s</title>
-<rect x="210" y="580" width="59" height="59" fill="rgb(83,77,80)"/>
-<title>P8 → C1: 1212.74 M/s</title>
-<rect x="270" y="580" width="59" height="59" fill="rgb(110,95,75)"/>
-<title>P8 → C2: 1234.23 M/s</title>
-<rect x="330" y="580" width="59" height="59" fill="rgb(205,160,60)"/>
-<title>P8 → C3: 1309.57 M/s</title>
-<rect x="390" y="580" width="59" height="59" fill="rgb(102,89,77)"/>
-<title>P8 → C4: 1227.66 M/s</title>
-<rect x="450" y="580" width="59" height="59" fill="rgb(96,85,78)"/>
-<title>P8 → C5: 1223.03 M/s</title>
-<rect x="510" y="580" width="59" height="59" fill="rgb(47,52,86)"/>
-<title>P8 → C6: 1183.77 M/s</title>
-<rect x="570" y="580" width="59" height="59" fill="rgb(101,89,77)"/>
-<title>P8 → C7: 1226.82 M/s</title>
-<rect x="630" y="580" width="59" height="59" fill="#cbd5e1"/>
-<rect x="690" y="580" width="59" height="59" fill="rgb(93,83,78)"/>
-<title>P8 → C9: 1220.21 M/s</title>
-<rect x="150" y="640" width="59" height="59" fill="rgb(109,94,76)"/>
-<title>P9 → C0: 1233.35 M/s</title>
-<rect x="210" y="640" width="59" height="59" fill="rgb(112,96,75)"/>
-<title>P9 → C1: 1235.43 M/s</title>
-<rect x="270" y="640" width="59" height="59" fill="rgb(88,80,79)"/>
-<title>P9 → C2: 1216.29 M/s</title>
-<rect x="330" y="640" width="59" height="59" fill="rgb(230,176,56)"/>
-<title>P9 → C3: 1328.82 M/s</title>
-<rect x="390" y="640" width="59" height="59" fill="rgb(22,35,90)"/>
-<title>P9 → C4: 1163.89 M/s</title>
-<rect x="450" y="640" width="59" height="59" fill="rgb(88,80,79)"/>
-<title>P9 → C5: 1216.80 M/s</title>
-<rect x="510" y="640" width="59" height="59" fill="rgb(27,38,89)"/>
-<title>P9 → C6: 1168.08 M/s</title>
-<rect x="570" y="640" width="59" height="59" fill="rgb(142,117,70)"/>
-<title>P9 → C7: 1259.33 M/s</title>
-<rect x="630" y="640" width="59" height="59" fill="rgb(89,80,79)"/>
-<title>P9 → C8: 1217.32 M/s</title>
-<rect x="690" y="640" width="59" height="59" fill="#cbd5e1"/>
-<text x="150" y="730" class="small">min 1163.9 M/s</text>
-<text x="750" y="730" text-anchor="end" class="small">max 1338.2 M/s</text>
+<svg xmlns="http://www.w3.org/2000/svg" width="313" height="390" viewBox="0 0 313 390" role="img" aria-label="Fixed batch width 16 — directed CPU-pair throughput">
+<style>text{font-family:ui-sans-serif,system-ui,sans-serif;fill:#172033}.title{font-size:22px;font-weight:700}.subtitle{font-size:12px;fill:#475569}.axis{font-size:11px;font-weight:600}.tick{font-size:10px;fill:#475569}.note{font-size:10px;fill:#64748b}.legend-label{font-size:11px;font-weight:600}</style>
+<rect width="100%" height="100%" fill="#ffffff"/>
+<defs><linearGradient id="throughput-rainbow" x1="0" x2="1" y1="0" y2="0"><stop offset="0%" stop-color="#0000ff"/><stop offset="20%" stop-color="#00bfff"/><stop offset="40%" stop-color="#00ff00"/><stop offset="60%" stop-color="#ffff00"/><stop offset="80%" stop-color="#ff7f00"/><stop offset="100%" stop-color="#ff0000"/></linearGradient><pattern id="self-pair" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="8" height="8" fill="#dbe3ee"/><line x1="0" y1="0" x2="0" y2="8" stroke="#94a3b8" stroke-width="3"/></pattern></defs>
+<text x="28" y="32" class="title">Fixed batch width 16 — directed CPU-pair throughput</text>
+<text x="28" y="53" class="subtitle">Rows: producer CPU · columns: consumer CPU · each cell: median M items/s. advisory macOS affinity; no hard logical-CPU pinning.</text>
+<text x="185.0" y="70" text-anchor="middle" class="axis">Consumer logical CPU →</text>
+<text x="22" y="192.0" transform="rotate(-90 22 192.0)" text-anchor="middle" class="axis">Producer logical CPU →</text>
+<text x="113.0" y="104" text-anchor="middle" class="tick">0</text>
+<text x="98" y="123.0" text-anchor="end" class="tick">0</text>
+<text x="129.0" y="104" text-anchor="middle" class="tick">1</text>
+<text x="98" y="139.0" text-anchor="end" class="tick">1</text>
+<text x="145.0" y="104" text-anchor="middle" class="tick">2</text>
+<text x="98" y="155.0" text-anchor="end" class="tick">2</text>
+<text x="161.0" y="104" text-anchor="middle" class="tick">3</text>
+<text x="98" y="171.0" text-anchor="end" class="tick">3</text>
+<text x="177.0" y="104" text-anchor="middle" class="tick">4</text>
+<text x="98" y="187.0" text-anchor="end" class="tick">4</text>
+<text x="193.0" y="104" text-anchor="middle" class="tick">5</text>
+<text x="98" y="203.0" text-anchor="end" class="tick">5</text>
+<text x="209.0" y="104" text-anchor="middle" class="tick">6</text>
+<text x="98" y="219.0" text-anchor="end" class="tick">6</text>
+<text x="225.0" y="104" text-anchor="middle" class="tick">7</text>
+<text x="98" y="235.0" text-anchor="end" class="tick">7</text>
+<text x="241.0" y="104" text-anchor="middle" class="tick">8</text>
+<text x="98" y="251.0" text-anchor="end" class="tick">8</text>
+<text x="257.0" y="104" text-anchor="middle" class="tick">9</text>
+<text x="98" y="267.0" text-anchor="end" class="tick">9</text>
+<rect x="105" y="112" width="16.1" height="16.1" fill="url(#self-pair)"><title>CPU 0 → itself: excluded by benchmark design</title></rect>
+<rect x="121" y="112" width="16.1" height="16.1" fill="rgb(255,251,0)"><title>Producer CPU 0 → consumer CPU 1: median 1269.650 M items/s</title></rect>
+<rect x="137" y="112" width="16.1" height="16.1" fill="rgb(255,0,0)"><title>Producer CPU 0 → consumer CPU 2: median 1338.180 M items/s</title></rect>
+<rect x="153" y="112" width="16.1" height="16.1" fill="rgb(0,245,40)"><title>Producer CPU 0 → consumer CPU 3: median 1228.090 M items/s</title></rect>
+<rect x="169" y="112" width="16.1" height="16.1" fill="rgb(74,255,0)"><title>Producer CPU 0 → consumer CPU 4: median 1243.750 M items/s</title></rect>
+<rect x="185" y="112" width="16.1" height="16.1" fill="rgb(0,224,123)"><title>Producer CPU 0 → consumer CPU 5: median 1216.780 M items/s</title></rect>
+<rect x="201" y="112" width="16.1" height="16.1" fill="rgb(0,220,139)"><title>Producer CPU 0 → consumer CPU 6: median 1214.670 M items/s</title></rect>
+<rect x="217" y="112" width="16.1" height="16.1" fill="rgb(167,255,0)"><title>Producer CPU 0 → consumer CPU 7: median 1256.490 M items/s</title></rect>
+<rect x="233" y="112" width="16.1" height="16.1" fill="rgb(0,236,76)"><title>Producer CPU 0 → consumer CPU 8: median 1223.260 M items/s</title></rect>
+<rect x="249" y="112" width="16.1" height="16.1" fill="rgb(0,241,56)"><title>Producer CPU 0 → consumer CPU 9: median 1226.000 M items/s</title></rect>
+<rect x="105" y="128" width="16.1" height="16.1" fill="rgb(80,255,0)"><title>Producer CPU 1 → consumer CPU 0: median 1244.560 M items/s</title></rect>
+<rect x="121" y="128" width="16.1" height="16.1" fill="url(#self-pair)"><title>CPU 1 → itself: excluded by benchmark design</title></rect>
+<rect x="137" y="128" width="16.1" height="16.1" fill="rgb(200,255,0)"><title>Producer CPU 1 → consumer CPU 2: median 1260.980 M items/s</title></rect>
+<rect x="153" y="128" width="16.1" height="16.1" fill="rgb(0,241,54)"><title>Producer CPU 1 → consumer CPU 3: median 1226.240 M items/s</title></rect>
+<rect x="169" y="128" width="16.1" height="16.1" fill="rgb(0,203,208)"><title>Producer CPU 1 → consumer CPU 4: median 1205.190 M items/s</title></rect>
+<rect x="185" y="128" width="16.1" height="16.1" fill="rgb(0,229,104)"><title>Producer CPU 1 → consumer CPU 5: median 1219.380 M items/s</title></rect>
+<rect x="201" y="128" width="16.1" height="16.1" fill="rgb(0,254,5)"><title>Producer CPU 1 → consumer CPU 6: median 1232.880 M items/s</title></rect>
+<rect x="217" y="128" width="16.1" height="16.1" fill="rgb(0,200,219)"><title>Producer CPU 1 → consumer CPU 7: median 1203.680 M items/s</title></rect>
+<rect x="233" y="128" width="16.1" height="16.1" fill="rgb(0,100,255)"><title>Producer CPU 1 → consumer CPU 8: median 1182.130 M items/s</title></rect>
+<rect x="249" y="128" width="16.1" height="16.1" fill="rgb(41,255,0)"><title>Producer CPU 1 → consumer CPU 9: median 1239.180 M items/s</title></rect>
+<rect x="105" y="144" width="16.1" height="16.1" fill="rgb(0,242,51)"><title>Producer CPU 2 → consumer CPU 0: median 1226.580 M items/s</title></rect>
+<rect x="121" y="144" width="16.1" height="16.1" fill="rgb(0,244,44)"><title>Producer CPU 2 → consumer CPU 1: median 1227.540 M items/s</title></rect>
+<rect x="137" y="144" width="16.1" height="16.1" fill="url(#self-pair)"><title>CPU 2 → itself: excluded by benchmark design</title></rect>
+<rect x="153" y="144" width="16.1" height="16.1" fill="rgb(255,77,0)"><title>Producer CPU 2 → consumer CPU 3: median 1317.020 M items/s</title></rect>
+<rect x="169" y="144" width="16.1" height="16.1" fill="rgb(0,222,133)"><title>Producer CPU 2 → consumer CPU 4: median 1215.410 M items/s</title></rect>
+<rect x="185" y="144" width="16.1" height="16.1" fill="rgb(0,227,112)"><title>Producer CPU 2 → consumer CPU 5: median 1218.230 M items/s</title></rect>
+<rect x="201" y="144" width="16.1" height="16.1" fill="rgb(0,208,186)"><title>Producer CPU 2 → consumer CPU 6: median 1208.190 M items/s</title></rect>
+<rect x="217" y="144" width="16.1" height="16.1" fill="rgb(255,95,0)"><title>Producer CPU 2 → consumer CPU 7: median 1312.120 M items/s</title></rect>
+<rect x="233" y="144" width="16.1" height="16.1" fill="rgb(0,226,114)"><title>Producer CPU 2 → consumer CPU 8: median 1218.060 M items/s</title></rect>
+<rect x="249" y="144" width="16.1" height="16.1" fill="rgb(0,237,72)"><title>Producer CPU 2 → consumer CPU 9: median 1223.810 M items/s</title></rect>
+<rect x="105" y="160" width="16.1" height="16.1" fill="rgb(138,255,0)"><title>Producer CPU 3 → consumer CPU 0: median 1252.490 M items/s</title></rect>
+<rect x="121" y="160" width="16.1" height="16.1" fill="rgb(0,246,37)"><title>Producer CPU 3 → consumer CPU 1: median 1228.530 M items/s</title></rect>
+<rect x="137" y="160" width="16.1" height="16.1" fill="rgb(11,255,0)"><title>Producer CPU 3 → consumer CPU 2: median 1235.080 M items/s</title></rect>
+<rect x="153" y="160" width="16.1" height="16.1" fill="url(#self-pair)"><title>CPU 3 → itself: excluded by benchmark design</title></rect>
+<rect x="169" y="160" width="16.1" height="16.1" fill="rgb(0,252,13)"><title>Producer CPU 3 → consumer CPU 4: median 1231.820 M items/s</title></rect>
+<rect x="185" y="160" width="16.1" height="16.1" fill="rgb(94,255,0)"><title>Producer CPU 3 → consumer CPU 5: median 1246.500 M items/s</title></rect>
+<rect x="201" y="160" width="16.1" height="16.1" fill="rgb(0,237,72)"><title>Producer CPU 3 → consumer CPU 6: median 1223.750 M items/s</title></rect>
+<rect x="217" y="160" width="16.1" height="16.1" fill="rgb(0,247,30)"><title>Producer CPU 3 → consumer CPU 7: median 1229.490 M items/s</title></rect>
+<rect x="233" y="160" width="16.1" height="16.1" fill="rgb(0,215,161)"><title>Producer CPU 3 → consumer CPU 8: median 1211.580 M items/s</title></rect>
+<rect x="249" y="160" width="16.1" height="16.1" fill="rgb(0,237,71)"><title>Producer CPU 3 → consumer CPU 9: median 1223.890 M items/s</title></rect>
+<rect x="105" y="176" width="16.1" height="16.1" fill="rgb(0,191,255)"><title>Producer CPU 4 → consumer CPU 0: median 1198.810 M items/s</title></rect>
+<rect x="121" y="176" width="16.1" height="16.1" fill="rgb(0,242,52)"><title>Producer CPU 4 → consumer CPU 1: median 1226.530 M items/s</title></rect>
+<rect x="137" y="176" width="16.1" height="16.1" fill="rgb(0,204,204)"><title>Producer CPU 4 → consumer CPU 2: median 1205.750 M items/s</title></rect>
+<rect x="153" y="176" width="16.1" height="16.1" fill="rgb(0,12,255)"><title>Producer CPU 4 → consumer CPU 3: median 1166.000 M items/s</title></rect>
+<rect x="169" y="176" width="16.1" height="16.1" fill="url(#self-pair)"><title>CPU 4 → itself: excluded by benchmark design</title></rect>
+<rect x="185" y="176" width="16.1" height="16.1" fill="rgb(0,226,114)"><title>Producer CPU 4 → consumer CPU 5: median 1218.000 M items/s</title></rect>
+<rect x="201" y="176" width="16.1" height="16.1" fill="rgb(0,197,232)"><title>Producer CPU 4 → consumer CPU 6: median 1201.920 M items/s</title></rect>
+<rect x="217" y="176" width="16.1" height="16.1" fill="rgb(0,211,176)"><title>Producer CPU 4 → consumer CPU 7: median 1209.490 M items/s</title></rect>
+<rect x="233" y="176" width="16.1" height="16.1" fill="rgb(0,132,255)"><title>Producer CPU 4 → consumer CPU 8: median 1188.050 M items/s</title></rect>
+<rect x="249" y="176" width="16.1" height="16.1" fill="rgb(0,252,14)"><title>Producer CPU 4 → consumer CPU 9: median 1231.740 M items/s</title></rect>
+<rect x="105" y="192" width="16.1" height="16.1" fill="rgb(0,207,193)"><title>Producer CPU 5 → consumer CPU 0: median 1207.240 M items/s</title></rect>
+<rect x="121" y="192" width="16.1" height="16.1" fill="rgb(199,255,0)"><title>Producer CPU 5 → consumer CPU 1: median 1260.800 M items/s</title></rect>
+<rect x="137" y="192" width="16.1" height="16.1" fill="rgb(0,230,98)"><title>Producer CPU 5 → consumer CPU 2: median 1220.150 M items/s</title></rect>
+<rect x="153" y="192" width="16.1" height="16.1" fill="rgb(0,254,3)"><title>Producer CPU 5 → consumer CPU 3: median 1233.140 M items/s</title></rect>
+<rect x="169" y="192" width="16.1" height="16.1" fill="rgb(59,255,0)"><title>Producer CPU 5 → consumer CPU 4: median 1241.610 M items/s</title></rect>
+<rect x="185" y="192" width="16.1" height="16.1" fill="url(#self-pair)"><title>CPU 5 → itself: excluded by benchmark design</title></rect>
+<rect x="201" y="192" width="16.1" height="16.1" fill="rgb(0,252,11)"><title>Producer CPU 5 → consumer CPU 6: median 1232.120 M items/s</title></rect>
+<rect x="217" y="192" width="16.1" height="16.1" fill="rgb(0,217,150)"><title>Producer CPU 5 → consumer CPU 7: median 1213.130 M items/s</title></rect>
+<rect x="233" y="192" width="16.1" height="16.1" fill="rgb(5,255,0)"><title>Producer CPU 5 → consumer CPU 8: median 1234.260 M items/s</title></rect>
+<rect x="249" y="192" width="16.1" height="16.1" fill="rgb(68,255,0)"><title>Producer CPU 5 → consumer CPU 9: median 1242.890 M items/s</title></rect>
+<rect x="105" y="208" width="16.1" height="16.1" fill="rgb(0,28,255)"><title>Producer CPU 6 → consumer CPU 0: median 1169.080 M items/s</title></rect>
+<rect x="121" y="208" width="16.1" height="16.1" fill="rgb(0,214,165)"><title>Producer CPU 6 → consumer CPU 1: median 1211.100 M items/s</title></rect>
+<rect x="137" y="208" width="16.1" height="16.1" fill="rgb(0,223,126)"><title>Producer CPU 6 → consumer CPU 2: median 1216.350 M items/s</title></rect>
+<rect x="153" y="208" width="16.1" height="16.1" fill="rgb(0,228,108)"><title>Producer CPU 6 → consumer CPU 3: median 1218.890 M items/s</title></rect>
+<rect x="169" y="208" width="16.1" height="16.1" fill="rgb(0,199,222)"><title>Producer CPU 6 → consumer CPU 4: median 1203.210 M items/s</title></rect>
+<rect x="185" y="208" width="16.1" height="16.1" fill="rgb(0,208,186)"><title>Producer CPU 6 → consumer CPU 5: median 1208.160 M items/s</title></rect>
+<rect x="201" y="208" width="16.1" height="16.1" fill="url(#self-pair)"><title>CPU 6 → itself: excluded by benchmark design</title></rect>
+<rect x="217" y="208" width="16.1" height="16.1" fill="rgb(0,214,162)"><title>Producer CPU 6 → consumer CPU 7: median 1211.490 M items/s</title></rect>
+<rect x="233" y="208" width="16.1" height="16.1" fill="rgb(0,233,87)"><title>Producer CPU 6 → consumer CPU 8: median 1221.760 M items/s</title></rect>
+<rect x="249" y="208" width="16.1" height="16.1" fill="rgb(0,252,14)"><title>Producer CPU 6 → consumer CPU 9: median 1231.710 M items/s</title></rect>
+<rect x="105" y="224" width="16.1" height="16.1" fill="rgb(0,250,20)"><title>Producer CPU 7 → consumer CPU 0: median 1230.860 M items/s</title></rect>
+<rect x="121" y="224" width="16.1" height="16.1" fill="rgb(0,241,55)"><title>Producer CPU 7 → consumer CPU 1: median 1226.150 M items/s</title></rect>
+<rect x="137" y="224" width="16.1" height="16.1" fill="rgb(0,216,156)"><title>Producer CPU 7 → consumer CPU 2: median 1212.260 M items/s</title></rect>
+<rect x="153" y="224" width="16.1" height="16.1" fill="rgb(104,255,0)"><title>Producer CPU 7 → consumer CPU 3: median 1247.880 M items/s</title></rect>
+<rect x="169" y="224" width="16.1" height="16.1" fill="rgb(0,221,134)"><title>Producer CPU 7 → consumer CPU 4: median 1215.270 M items/s</title></rect>
+<rect x="185" y="224" width="16.1" height="16.1" fill="rgb(0,192,252)"><title>Producer CPU 7 → consumer CPU 5: median 1199.120 M items/s</title></rect>
+<rect x="201" y="224" width="16.1" height="16.1" fill="rgb(47,255,0)"><title>Producer CPU 7 → consumer CPU 6: median 1240.010 M items/s</title></rect>
+<rect x="217" y="224" width="16.1" height="16.1" fill="url(#self-pair)"><title>CPU 7 → itself: excluded by benchmark design</title></rect>
+<rect x="233" y="224" width="16.1" height="16.1" fill="rgb(0,233,88)"><title>Producer CPU 7 → consumer CPU 8: median 1221.590 M items/s</title></rect>
+<rect x="249" y="224" width="16.1" height="16.1" fill="rgb(0,247,34)"><title>Producer CPU 7 → consumer CPU 9: median 1228.990 M items/s</title></rect>
+<rect x="105" y="240" width="16.1" height="16.1" fill="rgb(255,241,0)"><title>Producer CPU 8 → consumer CPU 0: median 1272.230 M items/s</title></rect>
+<rect x="121" y="240" width="16.1" height="16.1" fill="rgb(0,217,153)"><title>Producer CPU 8 → consumer CPU 1: median 1212.740 M items/s</title></rect>
+<rect x="137" y="240" width="16.1" height="16.1" fill="rgb(5,255,0)"><title>Producer CPU 8 → consumer CPU 2: median 1234.230 M items/s</title></rect>
+<rect x="153" y="240" width="16.1" height="16.1" fill="rgb(255,104,0)"><title>Producer CPU 8 → consumer CPU 3: median 1309.570 M items/s</title></rect>
+<rect x="169" y="240" width="16.1" height="16.1" fill="rgb(0,244,43)"><title>Producer CPU 8 → consumer CPU 4: median 1227.660 M items/s</title></rect>
+<rect x="185" y="240" width="16.1" height="16.1" fill="rgb(0,236,77)"><title>Producer CPU 8 → consumer CPU 5: median 1223.030 M items/s</title></rect>
+<rect x="201" y="240" width="16.1" height="16.1" fill="rgb(0,109,255)"><title>Producer CPU 8 → consumer CPU 6: median 1183.770 M items/s</title></rect>
+<rect x="217" y="240" width="16.1" height="16.1" fill="rgb(0,243,50)"><title>Producer CPU 8 → consumer CPU 7: median 1226.820 M items/s</title></rect>
+<rect x="233" y="240" width="16.1" height="16.1" fill="url(#self-pair)"><title>CPU 8 → itself: excluded by benchmark design</title></rect>
+<rect x="249" y="240" width="16.1" height="16.1" fill="rgb(0,230,98)"><title>Producer CPU 8 → consumer CPU 9: median 1220.210 M items/s</title></rect>
+<rect x="105" y="256" width="16.1" height="16.1" fill="rgb(0,255,2)"><title>Producer CPU 9 → consumer CPU 0: median 1233.350 M items/s</title></rect>
+<rect x="121" y="256" width="16.1" height="16.1" fill="rgb(13,255,0)"><title>Producer CPU 9 → consumer CPU 1: median 1235.430 M items/s</title></rect>
+<rect x="137" y="256" width="16.1" height="16.1" fill="rgb(0,223,127)"><title>Producer CPU 9 → consumer CPU 2: median 1216.290 M items/s</title></rect>
+<rect x="153" y="256" width="16.1" height="16.1" fill="rgb(255,34,0)"><title>Producer CPU 9 → consumer CPU 3: median 1328.820 M items/s</title></rect>
+<rect x="169" y="256" width="16.1" height="16.1" fill="rgb(0,0,255)"><title>Producer CPU 9 → consumer CPU 4: median 1163.890 M items/s</title></rect>
+<rect x="185" y="256" width="16.1" height="16.1" fill="rgb(0,224,123)"><title>Producer CPU 9 → consumer CPU 5: median 1216.800 M items/s</title></rect>
+<rect x="201" y="256" width="16.1" height="16.1" fill="rgb(0,23,255)"><title>Producer CPU 9 → consumer CPU 6: median 1168.080 M items/s</title></rect>
+<rect x="217" y="256" width="16.1" height="16.1" fill="rgb(188,255,0)"><title>Producer CPU 9 → consumer CPU 7: median 1259.330 M items/s</title></rect>
+<rect x="233" y="256" width="16.1" height="16.1" fill="rgb(0,225,119)"><title>Producer CPU 9 → consumer CPU 8: median 1217.320 M items/s</title></rect>
+<rect x="249" y="256" width="16.1" height="16.1" fill="url(#self-pair)"><title>CPU 9 → itself: excluded by benchmark design</title></rect>
+<text x="105" y="308" class="legend-label">Median throughput (M items/s)</text>
+<rect x="105" y="316" width="160" height="16" rx="2" fill="url(#throughput-rainbow)" stroke="#475569"/>
+<line x1="105" y1="332" x2="105" y2="337" stroke="#334155"/>
+<text x="105" y="351" text-anchor="middle" class="tick">1164</text>
+<line x1="145.0" y1="332" x2="145.0" y2="337" stroke="#334155"/>
+<text x="145.0" y="351" text-anchor="middle" class="tick">1207</text>
+<line x1="185.0" y1="332" x2="185.0" y2="337" stroke="#334155"/>
+<text x="185.0" y="351" text-anchor="middle" class="tick">1251</text>
+<line x1="225.0" y1="332" x2="225.0" y2="337" stroke="#334155"/>
+<text x="225.0" y="351" text-anchor="middle" class="tick">1295</text>
+<line x1="265" y1="332" x2="265" y2="337" stroke="#334155"/>
+<text x="265" y="351" text-anchor="middle" class="tick">1338</text>
+<text x="105" y="367" class="note">Slowest = blue · fastest = red · linear scale for this view</text>
+<rect x="293" y="318" width="14" height="14" fill="url(#self-pair)"/><text x="313" y="330" class="note">self pair excluded</text>
 </svg>
