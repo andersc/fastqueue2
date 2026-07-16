@@ -1,0 +1,1 @@
+{"config": {"action": "launch", "hosts": ["f131", "f061"], "min_sample_ms": 100, "plot_cpus": 0, "rounds": 5, "transfers": 720720, "warmups": 1}, "host": "f131", "source_revision": "bc40e674ba00cde5f41faa904aed04e22355dca0", "ssh": "anders.cedronius@f131-lab-ac.lab.tickup.net", "started_utc": "2026-07-15T12:51:48Z"}

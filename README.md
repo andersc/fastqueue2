@@ -162,19 +162,105 @@ ARM batch staging). Diagonal cells are blank: a queue needs distinct producer
 and consumer threads. CSV rows also record socket/core/SMT data where Linux
 exposes it, hard-pin success, raw rounds, and median summaries.
 
-Quick bounded local probe—limits work to four allowed logical CPUs:
+Quick calibrated local probe—four allowed logical CPUs, per-cell work scaled from
+a calibration pass to target at least 100 ms:
 
 ```bash
-python3 tools/run_topology_matrix.py --max-cpus 4 --transfers 2162160 --rounds 3 --warmups 1
+python3 tools/run_topology_matrix.py \
+  --max-cpus 4 --transfers 720720 --min-sample-ms 100 \
+  --rounds 5 --warmups 1
 ```
 
-Full matrices grow quickly: `ordered_pairs × (1 + fixed_widths) ×
-(warmups + rounds)`. Start bounded. Use a transfer count divisible by every
-fixed width: `840` minimum for an 8-wide target, `720720` minimum for a
-16-wide target. Increase it until each individual sample lasts roughly
-100–500 ms. Artifacts land in `docs/topology-matrix/`:
+### Completed full-span Linux results
 
-```text
+| Host | CPU model | Scope | Modes | Status | Artifacts |
+|---|---|---:|---|---|---|
+| `f061-lab-gpu.lab.tickup.net` | Intel Xeon E5-2630L v3 | all 32 allowed logical CPUs; `32 × 31 = 992` ordered paths | Scalar | complete; 4,960 rows; hard-pinned | [scalar heatmap](docs/topology-matrix/linux-runs/fq-topology-f061-20260715-145151/scalar-heatmap.svg) · [3D topology heatmap](docs/topology-matrix/linux-runs/fq-topology-f061-20260715-145151/topology-3d-heatmap.svg) · [raw CSV](docs/topology-matrix/linux-runs/fq-topology-f061-20260715-145151/results.csv) · [median summary](docs/topology-matrix/linux-runs/fq-topology-f061-20260715-145151/summary.json) · [metadata](docs/topology-matrix/linux-runs/fq-topology-f061-20260715-145151/metadata.json) · [width chart](docs/topology-matrix/linux-runs/fq-topology-f061-20260715-145151/width-depth.svg) |
+| `s05u24-f177-lab.infra.tickup.io` | AMD EPYC 7702P | all 128 allowed logical CPUs; `128 × 127 = 16,256` ordered paths | Scalar + fixed 8 | complete; 162,560 rows; hard-pinned | [scalar heatmap](docs/topology-matrix/linux-runs/fq-epyc7702p-full/scalar-heatmap.svg) · [fixed-8 heatmap](docs/topology-matrix/linux-runs/fq-epyc7702p-full/fixed-8-heatmap.svg) · [3D topology heatmap](docs/topology-matrix/linux-runs/fq-epyc7702p-full/topology-3d-heatmap.svg) · [raw CSV](docs/topology-matrix/linux-runs/fq-epyc7702p-full/results.csv) · [median summary](docs/topology-matrix/linux-runs/fq-epyc7702p-full/summary.json) · [metadata](docs/topology-matrix/linux-runs/fq-epyc7702p-full/metadata.json) · [width chart](docs/topology-matrix/linux-runs/fq-epyc7702p-full/width-depth.svg) |
+| `f131-lab-ac.lab.tickup.net` | AMD EPYC 7702 | all 256 allowed logical CPUs; `256 × 255 = 65,280` ordered paths | Scalar | complete; 326,400 rows; hard-pinned | [scalar heatmap](docs/topology-matrix/linux-runs/fq-topology-f131-20260715-145148/scalar-heatmap.svg) · [3D topology heatmap](docs/topology-matrix/linux-runs/fq-topology-f131-20260715-145148/topology-3d-heatmap.svg) · [raw CSV](docs/topology-matrix/linux-runs/fq-topology-f131-20260715-145148/results.csv) · [median summary](docs/topology-matrix/linux-runs/fq-topology-f131-20260715-145148/summary.json) · [metadata](docs/topology-matrix/linux-runs/fq-topology-f131-20260715-145148/metadata.json) · [width chart](docs/topology-matrix/linux-runs/fq-topology-f131-20260715-145148/width-depth.svg) |
+
+`f061` validation: 4,960 rows = 992 directed paths × scalar width × five timed
+rounds; every row has `pinned=1` and positive throughput. Median raw-sample
+throughput is 190.984 M items/s (range 12.087–420.108). Fixed width remains
+excluded because host width-8 probe returned invalid pin/rate data.
+
+`f177` validation: 162,560 rows = 16,256 directed paths × two modes (scalar,
+fixed width 8) × five timed rounds; every row has `pinned=1` and positive
+throughput. Its median summary contains 32,512 path×mode entries. This host's
+custom legacy job directory is `/tmp/fq-epyc7702p-full`; remote helper status
+and harvest handle it directly.
+
+`f131` validation: 326,400 rows = 65,280 directed paths × scalar width × five
+timed rounds; every row has `pinned=1` and positive throughput. Its median
+summary contains 65,280 path×width entries. Raw-sample median throughput is
+22.174 M items/s (range 12.558–397.337). Fixed width remains excluded because
+host width-8 probe returned invalid pin/rate data.
+
+`--transfers` is calibration work, not necessarily timed work when
+`--min-sample-ms` is nonzero. Each CSV row records `effective_transfers` and
+`calibration_millis`; rate calculation uses effective work. Workers signal
+that affinity setup completed before timing begins. Exact FIFO validation runs
+for every transfer in calibration, warmup, and timed samples.
+
+Full matrices grow quickly: `ordered_pairs × (1 + fixed_widths) ×
+(warmups + rounds)`. A 128-selected-CPU / eight-wide system has `128 × 127 ×
+9 = 145,152` pair×mode cells. At five rounds plus one warmup that is 870,912
+executions. With calibrated 100M-transfer cells, serial work is roughly 87
+trillion transfers—days, not minutes. Start with topology classes: SMT sibling,
+same cache cluster, different cache cluster in socket, then cross-NUMA.
+
+Shard exhaustive producer rows across independent identical SSH hosts. Shards
+are disjoint by producer-row index and can merge by concatenating their CSVs
+only when CPU selection, binary, calibration settings, and host topology are
+identical:
+
+```bash
+# Host 0 of 8
+python3 tools/run_topology_matrix.py --max-cpus 128 --transfers 720720 \
+  --min-sample-ms 100 --rounds 5 --warmups 1 \
+  --producer-shards 8 --producer-shard 0 --out /tmp/fq-shard-0
+
+# Host 1 uses --producer-shard 1; continue through 7.
+# Progress stderr reports timed samples completed and rolling ETA.
+cat /tmp/fq-shard-*/results.csv | { head -n 1; grep -hv '^producer_cpu,'; } > merged-results.csv
+```
+
+Use a transfer count divisible by every fixed width: `840` minimum for an
+8-wide target, `720720` minimum for a 16-wide target.
+
+### Detached multi-host Linux runs
+
+`tools/remote_topology.py` stages exact current source as a tarball, builds it
+on each named host, then launches benchmark via remote `nohup`. Jobs survive
+local SSH disconnects and local-machine reboot. They do not survive remote host
+reboot. Each launch creates unique `/tmp/fq-topology-<host>-<timestamp>/` paths
+containing `run.pid`, `command.txt`, `launch.json`, `run.log`, source, build,
+and artifacts. Existing `f177` full-span job is detected and skipped; never
+reuse `/tmp/fq-epyc7702p-full`, because benchmark CSV opens with truncation.
+
+```bash
+# Launch safe scalar topology runs on f131/f061. Existing active f177 full-span job is skipped.
+python3 tools/remote_topology.py launch --hosts f131 f177 f061 \
+  --transfers 720720 --min-sample-ms 100 --rounds 5 --warmups 1 --plot-cpus 0
+
+# Inspect remote PID, raw CSV row count, and latest progress/ETA without stopping jobs.
+python3 tools/remote_topology.py status --hosts f131 f177 f061
+
+# Copy only finished, fully rendered artifact sets into docs/topology-matrix/linux-runs/.
+python3 tools/remote_topology.py harvest --hosts f131 f177 f061
+```
+
+Host matrices are independent: never merge CSVs from different CPU models or
+topologies. `launch.json` records SSH target, exact source revision, UTC launch
+time, and benchmark arguments. Harvest does not copy a running or incomplete
+result. Validate each harvested `results.csv` for expected pair/mode/round
+coverage and `pinned=1` before publishing links.
+
+Fixed width 8 is unavailable on hosts where its initial validation returns
+`pinned=0` or zero rate. Launcher uses scalar-only by default; add `--widths
+0,8` only after host-specific width-8 probe succeeds.
+
+Artifacts land in `docs/topology-matrix/`:
 metadata.json       OS, compiler-adjacent and placement-confidence metadata
 results.csv         every pair × width × round; resumable raw measurements
 summary.json        median throughput for every pair × width
@@ -196,13 +282,12 @@ New CPU *models* in those architectures need no LLM onboarding—the runner
 probes topology and compiles native code. A genuinely new ISA needs queue
 backend, correctness tests, and performance work before benchmark support.
 
-Measured Linux probe: dual-socket AMD EPYC 7702, Linux x86_64. This is fresh
-hard-pinned data, not Apple advisory scheduling data. It covers CPUs `0..3` only:
-12 ordered producer→consumer paths, all inside socket 0/NUMA node 0. Each path
-and mode used 5 timed rounds after 1 warmup, with 2,162,160 validated pointer
-transfers per timed round: 540 raw samples total. It therefore measures local
-core-to-core communication only; rerun with representative CPUs from both
-sockets for cross-NUMA data.
+Measured Linux **smoke probe**: dual-socket AMD EPYC 7702, Linux x86_64. This
+is real hard-pinned FIFO-validated data but not stable enough for topology
+claims: it covers CPUs `0..3` only and used 2,162,160 transfers/sample, which
+can be only a few milliseconds for fixed width 8. It remains a functional
+artifact, not benchmark evidence. Run calibrated samples as above before
+publishing pair-level conclusions.
 
 Graphs stay separate from README. SVG heatmap cells retain hover tooltips with exact
 median M items/s.

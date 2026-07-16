@@ -38,8 +38,14 @@ def metadata():
 def build(build_dir: Path):
     compiler = shutil.which('clang++') or shutil.which('g++') or shutil.which('c++')
     if not compiler: raise SystemExit('No C++ compiler found')
-    command(['cmake', '-S', ROOT, '-B', build_dir, '-DCMAKE_BUILD_TYPE=Release', f'-DCMAKE_CXX_COMPILER={compiler}'])
-    command(['cmake', '--build', build_dir, '--target', 'fast_queue_topology_matrix', '-j'])
+    cmake = shutil.which('cmake')
+    if cmake:
+        command([cmake, '-S', ROOT, '-B', build_dir, '-DCMAKE_BUILD_TYPE=Release', f'-DCMAKE_CXX_COMPILER={compiler}'])
+        command([cmake, '--build', build_dir, '--target', 'fast_queue_topology_matrix', '-j'])
+    else:
+        build_dir.mkdir(parents=True, exist_ok=True)
+        command([compiler, '-std=c++20', '-O3', '-DNDEBUG', '-pthread', '-I', ROOT,
+                 ROOT/'FastQueueTopologyMatrix.cpp', '-o', build_dir/'fast_queue_topology_matrix'])
     return build_dir / 'fast_queue_topology_matrix'
 
 def load(path: Path):
@@ -149,7 +155,7 @@ def svg_depth(rows, path: Path, meta: dict):
     lines += [f'<text x="{L}" y="{H-18}" class="small">Scalar API is not a batch width. Fixed widths begin at 1.</text>', f'<text x="{L-8}" y="68" text-anchor="end" class="small">{hi:.0f} M/s</text>','</svg>']; path.write_text('\n'.join(lines))
 
 def main():
-    p=argparse.ArgumentParser(description=__doc__); p.add_argument('--out',type=Path,default=ROOT/'docs'/'topology-matrix'); p.add_argument('--max-cpus',type=int,default=0); p.add_argument('--3d-max-cpus',type=int,default=16,help='logical CPUs shown in 3D overview; 0 shows all'); p.add_argument('--transfers',type=int,default=2162160); p.add_argument('--rounds',type=int,default=3); p.add_argument('--warmups',type=int,default=1); p.add_argument('--no-build',action='store_true'); a=p.parse_args()
+    p=argparse.ArgumentParser(description=__doc__); p.add_argument('--out',type=Path,default=ROOT/'docs'/'topology-matrix'); p.add_argument('--max-cpus',type=int,default=0); p.add_argument('--3d-max-cpus',type=int,default=16,help='logical CPUs shown in 3D overview; 0 shows all'); p.add_argument('--transfers',type=int,default=2162160,help='calibration transfers; exact multiple of all fixed widths'); p.add_argument('--min-sample-ms',type=int,default=0,help='calibrate every producer/to/width cell to at least this timed duration; 0 disables'); p.add_argument('--rounds',type=int,default=3); p.add_argument('--widths',default='',help='comma-separated widths; 0=scalar, empty=all supported widths'); p.add_argument('--warmups',type=int,default=1); p.add_argument('--producer-shard',type=int,default=0,help='zero-based producer-row shard'); p.add_argument('--producer-shards',type=int,default=1,help='total non-overlapping producer-row shards'); p.add_argument('--no-build',action='store_true'); a=p.parse_args()
     a.out.mkdir(parents=True,exist_ok=True); meta=metadata(); (a.out/'metadata.json').write_text(json.dumps(meta,indent=2)+'\n')
     if a.no_build:
         candidates = [ROOT/'cmake-build-release'/'fast_queue_topology_matrix', ROOT/'cmake-build-topology'/'fast_queue_topology_matrix']
@@ -158,7 +164,7 @@ def main():
             raise SystemExit('--no-build needs fast_queue_topology_matrix in cmake-build-release or cmake-build-topology')
     else:
         exe = build(ROOT/'cmake-build-topology')
-    csv_path=a.out/'results.csv'; command([exe,'--output',csv_path,'--max-cpus',str(a.max_cpus),'--transfers',str(a.transfers),'--rounds',str(a.rounds),'--warmups',str(a.warmups)])
+    csv_path=a.out/'results.csv'; run_args=[exe,'--output',csv_path,'--max-cpus',str(a.max_cpus),'--transfers',str(a.transfers),'--rounds',str(a.rounds),'--warmups',str(a.warmups),'--min-sample-ms',str(a.min_sample_ms),'--producer-shard',str(a.producer_shard),'--producer-shards',str(a.producer_shards)] + (['--widths',a.widths] if a.widths else []); command(run_args); meta['benchmark']={'calibration_transfers':a.transfers,'min_sample_ms':a.min_sample_ms,'rounds':a.rounds,'warmups':a.warmups,'producer_shard':a.producer_shard,'producer_shards':a.producer_shards,'widths':a.widths or 'all supported'}; (a.out/'metadata.json').write_text(json.dumps(meta,indent=2)+'\n')
     rows=aggregate(load(csv_path)); (a.out/'summary.json').write_text(json.dumps(rows,indent=2)+'\n')
     max_width=max(map(lambda r:int(r['width']),rows),default=0); svg_heatmap(rows,0,a.out/'scalar-heatmap.svg',meta); svg_heatmap(rows,max_width,a.out/f'fixed-{max_width}-heatmap.svg',meta); svg_depth(rows,a.out/'width-depth.svg',meta); svg_voxel_cube(rows,a.out/'topology-3d-heatmap.svg',meta,a.__dict__['3d_max_cpus'])
     print(f'Wrote {csv_path}, summary.json, scalar-heatmap.svg, fixed-{max_width}-heatmap.svg, width-depth.svg, topology-3d-heatmap.svg')

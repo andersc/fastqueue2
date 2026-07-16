@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="440" viewBox="0 0 900 440">
+<style>text{font:13px sans-serif;fill:#172033}.title{font-size:20px;font-weight:bold}.small{font-size:11px}</style>
+<rect width="100%" height="100%" fill="#f8fafc"/>
+<text x="20" y="30" class="title">Batch-width depth — median across all ordered CPU pairs</text>
+<text x="20" y="52" class="small">hard Linux logical-CPU pinning. Error bars omitted: inspect CSV for every pair and round.</text>
+<line x1="70" y1="375" x2="870" y2="375" stroke="#334155"/><line x1="70" y1="375" x2="70" y2="60" stroke="#334155"/>
+<rect x="456.0" y="60.0" width="28" height="315.0" rx="3" fill="#14b8a6"/><title>Scalar: 193.30 M/s median</title>
+<text x="470.0" y="395" text-anchor="middle" class="small">Scalar</text>
+<text x="470.0" y="55.0" text-anchor="middle" class="small">193</text>
+<text x="70" y="422" class="small">Scalar API is not a batch width. Fixed widths begin at 1.</text>
+<text x="62" y="68" text-anchor="end" class="small">193 M/s</text>
+</svg>
