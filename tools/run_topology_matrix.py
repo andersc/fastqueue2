@@ -52,144 +52,155 @@ def load(path: Path):
     with path.open(newline='') as f: return list(csv.DictReader(f))
 
 def aggregate(rows):
-    groups = defaultdict(list); first = {}
+    """Return only deterministic per-directed-pair median records."""
+    groups = defaultdict(list)
+    pins = defaultdict(list)
     for r in rows:
         key = (int(r['producer_cpu']), int(r['consumer_cpu']), int(r['width']))
-        groups[key].append(float(r['throughput_mps'])); first[key] = r
-    out=[]
-    for k, values in groups.items():
-        r=dict(first[k]); r['median_mps']=median(values); r['sample_count']=len(values); out.append(r)
-    return out
+        groups[key].append(float(r['throughput_mps']))
+        if 'pinned' in r:
+            pins[key].append(int(r['pinned']))
+    return [
+        {'producer_cpu': producer, 'consumer_cpu': consumer, 'width': width,
+         'median_mps': median(values), 'sample_count': len(values),
+         'all_pinned': all(pins[(producer, consumer, width)]) if pins[(producer, consumer, width)] else None}
+        for (producer, consumer, width), values in sorted(groups.items())
+    ]
 
+# Reference-inspired throughput scale. Blue is slow; red is fast.
 RAINBOW_STOPS = ((0.00, '#0000ff'), (0.20, '#00bfff'), (0.40, '#00ff00'),
                  (0.60, '#ffff00'), (0.80, '#ff7f00'), (1.00, '#ff0000'))
 
-def rainbow(value: float, low: float, high: float) -> str:
-    """Cats2d-inspired rainbow: slow blue, fast red; no external asset needed."""
-    t = 0.5 if high == low else max(0.0, min(1.0, (value - low) / (high - low)))
-    for (left, a), (right, b) in zip(RAINBOW_STOPS, RAINBOW_STOPS[1:]):
-        if t <= right:
-            q = (t - left) / (right - left)
-            ar, ag, ab = (int(a[i:i+2], 16) for i in (1, 3, 5))
-            br, bg, bb = (int(b[i:i+2], 16) for i in (1, 3, 5))
-            return f'rgb({round(ar+(br-ar)*q)},{round(ag+(bg-ag)*q)},{round(ab+(bb-ab)*q)})'
-    return RAINBOW_STOPS[-1][1]
+def raster_modules():
+    import matplotlib
+    matplotlib.use('Agg', force=True)
+    import matplotlib.pyplot as plt
+    from matplotlib.colors import LinearSegmentedColormap, ListedColormap
+    import numpy as np
+    return plt, np, LinearSegmentedColormap.from_list('fq_rainbow', [c for _, c in RAINBOW_STOPS])
 
-def svg_defs() -> list[str]:
-    stops = ''.join(f'<stop offset="{at*100:.0f}%" stop-color="{color}"/>' for at, color in RAINBOW_STOPS)
-    return [f'<defs><linearGradient id="throughput-rainbow" x1="0" x2="1" y1="0" y2="0">{stops}</linearGradient><pattern id="self-pair" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="8" height="8" fill="#dbe3ee"/><line x1="0" y1="0" x2="0" y2="8" stroke="#94a3b8" stroke-width="3"/></pattern></defs>']
+def cpus_for(rows, meta):
+    declared = meta.get('allowed_cpus', [])
+    measured = {int(r['producer_cpu']) for r in rows} | {int(r['consumer_cpu']) for r in rows}
+    # Retain declared CPU universe when metadata has it; otherwise exact measured IDs.
+    return sorted(set(map(int, declared)) | measured)
 
-def legend(lines: list[str], x: float, y: float, width: float, low: float, high: float, label='Median throughput (M items/s)'):
-    lines += [f'<text x="{x}" y="{y-8}" class="legend-label">{label}</text>',
-              f'<rect x="{x}" y="{y}" width="{width}" height="16" rx="2" fill="url(#throughput-rainbow)" stroke="#475569"/>']
-    for fraction in (0, .25, .5, .75, 1):
-        xx=x+width*fraction; value=low+(high-low)*fraction
-        lines += [f'<line x1="{xx}" y1="{y+16}" x2="{xx}" y2="{y+21}" stroke="#334155"/>', f'<text x="{xx}" y="{y+35}" text-anchor="middle" class="tick">{value:.0f}</text>']
-    lines += [f'<text x="{x}" y="{y+51}" class="note">Slowest = blue · fastest = red · linear scale for this view</text>']
+def image_scale(values):
+    low, high = min(values, default=0.0), max(values, default=1.0)
+    return (low, high if high > low else low + 1.0)
 
-def svg_start(width, height, title, subtitle):
-    return [f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}" role="img" aria-label="{title}">',
-            '<style>text{font-family:ui-sans-serif,system-ui,sans-serif;fill:#172033}.title{font-size:22px;font-weight:700}.subtitle{font-size:12px;fill:#475569}.axis{font-size:11px;font-weight:600}.tick{font-size:10px;fill:#475569}.note{font-size:10px;fill:#64748b}.legend-label{font-size:11px;font-weight:600}</style>',
-            '<rect width="100%" height="100%" fill="#ffffff"/>', *svg_defs(),
-            f'<text x="28" y="32" class="title">{title}</text>', f'<text x="28" y="53" class="subtitle">{subtitle}</text>']
+def mode_label(width): return 'Scalar API' if width == 0 else f'Fixed batch width {width}'
 
-def svg_heatmap(rows, width: int, path: Path, meta: dict):
-    cells = {(int(r['producer_cpu']), int(r['consumer_cpu'])): float(r['median_mps']) for r in rows if int(r['width']) == width}
-    cpus = sorted(set(x for pair in cells for x in pair)); n=len(cpus); values=list(cells.values()); low=min(values, default=0); high=max(values, default=1)
-    cell=max(3, min(16, 920/max(n, 1))); plot=cell*n; left=105; top=112; right=48; bottom=118; W=left+plot+right; H=top+plot+bottom
-    mode='Scalar API' if width == 0 else f'Fixed batch width {width}'
-    lines=svg_start(W,H,f'{mode} — directed CPU-pair throughput', f'Rows: producer CPU · columns: consumer CPU · each cell: median M items/s. {meta.get("placement_confidence", "")}.')
-    lines += [f'<text x="{left+plot/2}" y="{top-42}" text-anchor="middle" class="axis">Consumer logical CPU →</text>', f'<text x="22" y="{top+plot/2}" transform="rotate(-90 22 {top+plot/2})" text-anchor="middle" class="axis">Producer logical CPU →</text>']
-    label_step=max(1, (n+23)//24)
-    for i,cpu in enumerate(cpus):
-        pos=left+(i+.5)*cell
-        if i % label_step == 0: lines.append(f'<text x="{pos}" y="{top-8}" text-anchor="middle" class="tick">{cpu}</text>')
-        pos=top+(i+.5)*cell
-        if i % label_step == 0: lines.append(f'<text x="{left-7}" y="{pos+3}" text-anchor="end" class="tick">{cpu}</text>')
-    for i,p in enumerate(cpus):
-        for j,c in enumerate(cpus):
-            x=left+j*cell; y=top+i*cell; v=cells.get((p,c))
-            if p == c:
-                lines.append(f'<rect x="{x}" y="{y}" width="{cell+.1}" height="{cell+.1}" fill="url(#self-pair)"><title>CPU {p} → itself: excluded by benchmark design</title></rect>')
-            elif v is None:
-                lines.append(f'<rect x="{x}" y="{y}" width="{cell+.1}" height="{cell+.1}" fill="#e2e8f0"><title>CPU {p} → CPU {c}: missing measurement</title></rect>')
-            else:
-                lines.append(f'<rect x="{x}" y="{y}" width="{cell+.1}" height="{cell+.1}" fill="{rainbow(v,low,high)}"><title>Producer CPU {p} → consumer CPU {c}: median {v:.3f} M items/s</title></rect>')
-    legend(lines,left,H-74,min(plot,420),low,high)
-    lines += [f'<rect x="{left+min(plot,420)+28}" y="{H-72}" width="14" height="14" fill="url(#self-pair)"/><text x="{left+min(plot,420)+48}" y="{H-60}" class="note">self pair excluded</text>', '</svg>']
-    path.write_text('\n'.join(lines))
+def png_heatmap(rows, width: int, path: Path, meta: dict):
+    plt, np, cmap = raster_modules()
+    cpus = cpus_for(rows, meta); n = len(cpus); pos = {cpu: i for i, cpu in enumerate(cpus)}
+    cells = {(int(r['producer_cpu']), int(r['consumer_cpu'])): float(r['median_mps'])
+             for r in rows if int(r['width']) == width}
+    low, high = image_scale(list(cells.values()))
+    data = np.full((n, n), np.nan)
+    for (producer, consumer), value in cells.items(): data[pos[producer], pos[consumer]] = value
+    cmap.set_bad('#d9e1ea')  # missing measurement
+    side = max(9.5, min(16.0, 5.5 + n / 24))
+    fig, ax = plt.subplots(figsize=(side + 2.8, side), layout='constrained')
+    im = ax.imshow(data, cmap=cmap, vmin=low, vmax=high, interpolation='nearest', aspect='equal')
+    # Excluded self-pairs: explicit dark hatch, distinct from missing light gray.
+    for i in range(n):
+        ax.add_patch(plt.Rectangle((i-.5, i-.5), 1, 1, facecolor='#d4dbe5', edgecolor='#64748b', hatch='///', linewidth=.18))
+    step = max(1, (n + 15) // 16); ticks = list(range(0, n, step))
+    ax.set_xticks(ticks, [str(cpus[i]) for i in ticks], rotation=0, fontsize=8)
+    ax.set_yticks(ticks, [str(cpus[i]) for i in ticks], fontsize=8)
+    ax.set_xlabel('Consumer logical CPU')
+    ax.set_ylabel('Producer logical CPU')
+    ax.set_title(f'{mode_label(width)} — directed producer → consumer throughput', weight='bold', pad=14)
+    ax.text(.5, 1.01, f'Cell = median M items/s; scale local to this image. {meta.get("placement_confidence", "")}',
+            transform=ax.transAxes, ha='center', va='bottom', fontsize=8)
+    cb = fig.colorbar(im, ax=ax, shrink=.83, pad=.025)
+    cb.set_label('Median throughput (M items/s)\nblue = slow · red = fast', fontsize=9)
+    ax.legend([plt.Rectangle((0, 0), 1, 1, facecolor='#d4dbe5', edgecolor='#64748b', hatch='///'),
+               plt.Rectangle((0, 0), 1, 1, facecolor='#d9e1ea', edgecolor='#94a3b8')],
+              ['self pair excluded', 'missing measurement'], loc='upper left', bbox_to_anchor=(1.02, .86), fontsize=8)
+    fig.savefig(path, dpi=180, facecolor='white')
+    plt.close(fig)
 
-def cube_bins(cpus, count):
-    count=min(count, len(cpus)); groups=[]
-    for i in range(count):
-        lo=round(i*len(cpus)/count); hi=round((i+1)*len(cpus)/count)
-        groups.append(cpus[lo:hi])
-    return groups
+def cpu_bins(cpus, count):
+    count = min(max(1, count), len(cpus)); return [cpus[round(i*len(cpus)/count):round((i+1)*len(cpus)/count)] for i in range(count)]
 
-def svg_voxel_cube(rows, path: Path, meta: dict, max_cpus: int):
-    """Static isometric volumetric heat cube. X=producer, Y=consumer, Z=mode."""
-    cpus=sorted({int(r['producer_cpu']) for r in rows}|{int(r['consumer_cpu']) for r in rows}); widths=sorted({int(r['width']) for r in rows})
-    bins=cube_bins(cpus, max_cpus or 12); n=len(bins); raw={(int(r['producer_cpu']),int(r['consumer_cpu']),int(r['width'])):float(r['median_mps']) for r in rows}
-    volume={}
-    for z,w in enumerate(widths):
-        for x,gp in enumerate(bins):
-            for y,gc in enumerate(bins):
-                vals=[raw[(p,c,w)] for p in gp for c in gc if (p,c,w) in raw]
-                if vals: volume[x,y,z]=median(vals)
-    vals=list(volume.values()); low=min(vals,default=0); high=max(vals,default=1)
-    cw=max(14,min(33,360/max(n,1))); ch=cw*.46; dz=max(22, min(52, 120/max(len(widths),1))); ox=390; oy=145+len(widths)*dz; W=900; H=max(590,oy+n*ch+140)
-    def pt(x,y,z): return ox+(x-y)*cw, oy+(x+y)*ch-z*dz
-    lines=svg_start(W,H,'Volumetric topology heat cube',f'X = producer CPU group · Y = consumer CPU group · Z = API/batch mode · color = median throughput. {meta.get("placement_confidence", "")}')
-    lines += ['<text x="28" y="76" class="note">Cube cells are median aggregates when CPU count exceeds display limit. Exact directed paths: linked CSV and 2D heatmaps. Self-pairs excluded.</text>']
-    # Draw back-to-front, then top/right/front faces for visible solid cube cells.
-    for z,w in enumerate(widths):
-        for x in range(n):
-            for y in range(n-1,-1,-1):
-                v=volume.get((x,y,z))
-                if v is None: continue
-                a=pt(x,y,z); b=pt(x+1,y,z); d=pt(x,y+1,z); e=pt(x+1,y+1,z); depth=dz
-                col=rainbow(v,low,high)
-                top=f'{a[0]},{a[1]} {b[0]},{b[1]} {e[0]},{e[1]} {d[0]},{d[1]}'
-                right=f'{b[0]},{b[1]} {e[0]},{e[1]} {e[0]},{e[1]+depth} {b[0]},{b[1]+depth}'
-                front=f'{d[0]},{d[1]} {e[0]},{e[1]} {e[0]},{e[1]+depth} {d[0]},{d[1]+depth}'
-                lines += [f'<g><polygon points="{right}" fill="{col}" opacity=".63"/><polygon points="{front}" fill="{col}" opacity=".82"/><polygon points="{top}" fill="{col}" stroke="#ffffff" stroke-width=".35"/><title>Producer group {bins[x][0]}–{bins[x][-1]} → consumer group {bins[y][0]}–{bins[y][-1]}; {"scalar" if w==0 else "width "+str(w)}; median {v:.3f} M items/s</title></g>']
-    # Dimension axes and labels.
-    for i,g in enumerate(bins):
-        label=str(g[0]) if len(g)==1 else f'{g[0]}–{g[-1]}'
-        x,y=pt(i+.5,0,0); lines.append(f'<text x="{x}" y="{y+19}" text-anchor="middle" class="tick">{label}</text>')
-        x,y=pt(0,i+.5,0); lines.append(f'<text x="{x-9}" y="{y+5}" text-anchor="end" class="tick">{label}</text>')
-    for z,w in enumerate(widths):
-        x,y=pt(0,n,z); lines.append(f'<text x="{x-10}" y="{y+5}" text-anchor="end" class="tick">{"scalar" if w==0 else "width "+str(w)}</text>')
-    lines += [f'<text x="{ox+cw*n+20}" y="{oy+ch*n/2}" class="axis">Producer CPU group →</text>', f'<text x="{ox-cw*n-185}" y="{oy+ch*n/2}" class="axis">← Consumer CPU group</text>', f'<text x="{ox-cw*n-135}" y="{oy-ch*n/2-10}" class="axis">Mode / width ↑</text>']
-    legend(lines,28,H-90,260,low,high)
-    lines.append('</svg>'); path.write_text('\n'.join(lines))
+def bin_label(group):
+    return str(group[0]) if len(group) == 1 else f'{group[0]}–{group[-1]}'
 
-def svg_depth(rows, path: Path, meta: dict):
-    widths=sorted({int(r['width']) for r in rows}); by={w:[float(r['median_mps']) for r in rows if int(r['width'])==w] for w in widths}; low=min((min(v) for v in by.values() if v),default=0); high=max((max(v) for v in by.values() if v),default=1)
-    W,H,L,R,T,B=900,520,90,45,95,115; pw=W-L-R; ph=H-T-B
-    lines=svg_start(W,H,'Batch mode comparison — topology distribution',f'Point: median across directed CPU pairs. Vertical whisker: min–max pair median. {meta.get("placement_confidence", "")}')
-    def y(v): return T+ph*(1-(v-low)/(high-low or 1))
-    lines += [f'<line x1="{L}" y1="{H-B}" x2="{W-R}" y2="{H-B}" stroke="#334155"/><line x1="{L}" y1="{T}" x2="{L}" y2="{H-B}" stroke="#334155"/>']
-    for frac in range(5):
-        val=low+(high-low)*frac/4; yy=y(val); lines += [f'<line x1="{L}" y1="{yy}" x2="{W-R}" y2="{yy}" stroke="#e2e8f0"/><text x="{L-9}" y="{yy+4}" text-anchor="end" class="tick">{val:.0f}</text>']
-    for i,w in enumerate(widths):
-        vs=by[w]; x=L+pw*(i+.5)/max(len(widths),1); med=median(vs); label='scalar' if w==0 else str(w)
-        lines += [f'<line x1="{x}" y1="{y(min(vs))}" x2="{x}" y2="{y(max(vs))}" stroke="#64748b" stroke-width="2"/><line x1="{x-7}" y1="{y(min(vs))}" x2="{x+7}" y2="{y(min(vs))}" stroke="#64748b"/><line x1="{x-7}" y1="{y(max(vs))}" x2="{x+7}" y2="{y(max(vs))}" stroke="#64748b"/><circle cx="{x}" cy="{y(med)}" r="7" fill="{rainbow(med,low,high)}" stroke="#172033"><title>{label}: pair median {med:.3f}; range {min(vs):.3f}–{max(vs):.3f} M items/s</title></circle>', f'<text x="{x}" y="{H-B+22}" text-anchor="middle" class="tick">{label}</text>']
-    lines += [f'<text x="{L}" y="{T-18}" class="axis">M items/s</text>', f'<text x="{L+pw/2}" y="{H-26}" text-anchor="middle" class="axis">API mode / fixed batch width</text>']
-    legend(lines, W-305, 72, 250, low, high, 'Point color: pair median (M items/s)')
-    lines += ['</svg>']
-    path.write_text('\n'.join(lines))
+def png_voxel_cube(rows, path: Path, meta: dict, max_cpus: int):
+    """Rasterized true 3D voxel volume; values aggregate exact pair medians per display bin."""
+    plt, np, cmap = raster_modules()
+    cpus = cpus_for(rows, meta); widths = sorted({int(r['width']) for r in rows})
+    bins = cpu_bins(cpus, max_cpus or 10); n, zcount = len(bins), len(widths)
+    raw = {(int(r['producer_cpu']), int(r['consumer_cpu']), int(r['width'])): float(r['median_mps']) for r in rows}
+    volume = np.full((n, n, zcount), np.nan); coverage = []
+    for x, producers in enumerate(bins):
+        for y, consumers in enumerate(bins):
+            for z, width in enumerate(widths):
+                expected = len(producers) * len(consumers) - len(set(producers) & set(consumers))
+                values = [raw[p, c, width] for p in producers for c in consumers if (p, c, width) in raw]
+                coverage.append({'producer_display_bin': producers, 'consumer_display_bin': consumers,
+                                 'width': width, 'expected_pairs': expected, 'measured_pairs': len(values),
+                                 'excluded_self_pairs': len(set(producers) & set(consumers)),
+                                 'median_of_pair_medians_mps': median(values) if values else None})
+                if values: volume[x, y, z] = median(values)
+    path.with_name('topology-voxel-cube-coverage.json').write_text(json.dumps({
+        'aggregation': 'Each voxel is median of measured directed-pair medians in explicit display bins.',
+        'display_bins': [list(b) for b in bins], 'widths': widths, 'voxels': coverage}, indent=2)+'\n')
+    values = volume[~np.isnan(volume)]; low, high = image_scale(values)
+    filled = ~np.isnan(volume); colors = cmap(np.clip((np.nan_to_num(volume, nan=low)-low)/(high-low), 0, 1))
+    # Alpha stays opaque: color still maps exactly to numeric legend. Missing voxels shown wireframe.
+    fig = plt.figure(figsize=(15, 12)); fig.subplots_adjust(left=.02, right=.82, bottom=.09, top=.90); ax = fig.add_subplot(projection='3d')
+    ax.voxels(filled, facecolors=colors, edgecolor=(.15, .18, .24, .30), linewidth=.32, shade=True)
+    # Dashed bounding frame makes cube depth legible even for a scalar-only one-layer volume.
+    ax.set_box_aspect((1, 1, max(.55, zcount / n * 2.2)))
+    ax.view_init(elev=26, azim=-52)
+    tickstep=max(1, (n+9)//10); tickidx=list(range(0, n, tickstep))
+    ax.set_xticks([i+.5 for i in tickidx], [bin_label(bins[i]) for i in tickidx], fontsize=8)
+    ax.set_yticks([i+.5 for i in tickidx], [bin_label(bins[i]) for i in tickidx], fontsize=8)
+    ax.set_zticks([i+.5 for i in range(zcount)], ['scalar' if w == 0 else f'width {w}' for w in widths], fontsize=8)
+    ax.set_xlabel('Producer CPU display bin', labelpad=13); ax.set_ylabel('Consumer CPU display bin', labelpad=13); ax.set_zlabel('API / batch mode', labelpad=9)
+    ax.set_title('Topology throughput — 3D voxel cube', weight='bold', pad=24)
+    ax.text2D(.5, .965, 'Each cube = median of directed-pair medians in display-bin × display-bin × mode. Blue = slow; red = fast.', transform=ax.transAxes, ha='center', fontsize=9)
+    from matplotlib.cm import ScalarMappable
+    from matplotlib.colors import Normalize
+    sm=ScalarMappable(norm=Normalize(low, high), cmap=cmap); sm.set_array([])
+    cb=fig.colorbar(sm, ax=ax, shrink=.62, pad=.08); cb.set_label('Median throughput (M items/s)\nscale local to cube', fontsize=9)
+    fig.text(.5, .025, f'{n} display bins retain CPU order; bin membership and complete/missing voxel coverage: topology-voxel-cube-coverage.json. {meta.get("placement_confidence", "")}', ha='center', fontsize=8)
+    fig.savefig(path, dpi=180, facecolor='white')
+    plt.close(fig)
+
+def png_depth(rows, path: Path, meta: dict):
+    plt, np, cmap = raster_modules()
+    widths=sorted({int(r['width']) for r in rows}); series=[]
+    for width in widths:
+        values=[float(r['median_mps']) for r in rows if int(r['width']) == width]
+        series.append((width, min(values), median(values), max(values)))
+    fig, ax=plt.subplots(figsize=(11, 6), layout='constrained')
+    x=np.arange(len(series)); lo=np.array([v[1] for v in series]); md=np.array([v[2] for v in series]); hi=np.array([v[3] for v in series])
+    ax.vlines(x, lo, hi, color='#52657d', linewidth=2, label='min–max directed-pair median'); ax.scatter(x, md, c='#e53935', s=55, zorder=3, label='median across directed pairs')
+    ax.set_xticks(x, ['scalar' if w == 0 else f'width {w}' for w, *_ in series]); ax.set_ylabel('Throughput (M items/s)'); ax.set_xlabel('API / fixed batch width'); ax.grid(axis='y', alpha=.25); ax.legend(); ax.set_title('Topology distribution by API / batch mode', weight='bold'); ax.text(.5, 1.01, meta.get('placement_confidence', ''), transform=ax.transAxes, ha='center', fontsize=8)
+    fig.savefig(path, dpi=180, facecolor='white'); plt.close(fig)
+
+def render(rows, out: Path, meta: dict, max_cpus: int):
+    max_width=max((int(r['width']) for r in rows), default=0)
+    png_heatmap(rows, 0, out/'scalar-heatmap.png', meta)
+    png_heatmap(rows, max_width, out/f'fixed-{max_width}-heatmap.png', meta)
+    png_depth(rows, out/'width-depth.png', meta)
+    png_voxel_cube(rows, out/'topology-voxel-cube.png', meta, max_cpus)
 
 def main():
-    p=argparse.ArgumentParser(description=__doc__); p.add_argument('--out',type=Path,default=ROOT/'docs'/'topology-matrix'); p.add_argument('--max-cpus',type=int,default=0); p.add_argument('--3d-max-cpus',type=int,default=12,help='CPU groups shown per cube dimension; 0 uses 12 groups'); p.add_argument('--transfers',type=int,default=2162160,help='calibration transfers; exact multiple of all fixed widths'); p.add_argument('--min-sample-ms',type=int,default=0,help='calibrate every producer/to/width cell to at least this timed duration; 0 disables'); p.add_argument('--rounds',type=int,default=3); p.add_argument('--widths',default='',help='comma-separated widths; 0=scalar, empty=all supported widths'); p.add_argument('--warmups',type=int,default=1); p.add_argument('--producer-shard',type=int,default=0,help='zero-based producer-row shard'); p.add_argument('--producer-shards',type=int,default=1,help='total non-overlapping producer-row shards'); p.add_argument('--no-build',action='store_true'); p.add_argument('--render-only',action='store_true',help='regenerate SVGs from existing results.csv and metadata.json'); a=p.parse_args()
+
+    p=argparse.ArgumentParser(description=__doc__); p.add_argument('--out',type=Path,default=ROOT/'docs'/'topology-matrix'); p.add_argument('--max-cpus',type=int,default=0); p.add_argument('--3d-max-cpus',type=int,default=10,help='ordered CPU display bins per cube dimension; 0 uses 10 bins'); p.add_argument('--transfers',type=int,default=2162160,help='calibration transfers; exact multiple of all fixed widths'); p.add_argument('--min-sample-ms',type=int,default=0,help='calibrate every producer/to/width cell to at least this timed duration; 0 disables'); p.add_argument('--rounds',type=int,default=3); p.add_argument('--widths',default='',help='comma-separated widths; 0=scalar, empty=all supported widths'); p.add_argument('--warmups',type=int,default=1); p.add_argument('--producer-shard',type=int,default=0,help='zero-based producer-row shard'); p.add_argument('--producer-shards',type=int,default=1,help='total non-overlapping producer-row shards'); p.add_argument('--no-build',action='store_true'); p.add_argument('--render-only',action='store_true',help='regenerate PNGs from existing results.csv and metadata.json'); a=p.parse_args()
     a.out.mkdir(parents=True,exist_ok=True)
     csv_path=a.out/'results.csv'
     if a.render_only:
         if not csv_path.exists(): raise SystemExit(f'--render-only needs {csv_path}')
         meta=json.loads((a.out/'metadata.json').read_text()) if (a.out/'metadata.json').exists() else metadata()
         rows=aggregate(load(csv_path)); (a.out/'summary.json').write_text(json.dumps(rows,indent=2)+'\n')
-        max_width=max(map(lambda r:int(r['width']),rows),default=0); svg_heatmap(rows,0,a.out/'scalar-heatmap.svg',meta); svg_heatmap(rows,max_width,a.out/f'fixed-{max_width}-heatmap.svg',meta); svg_depth(rows,a.out/'width-depth.svg',meta); svg_voxel_cube(rows,a.out/'topology-3d-heatmap.svg',meta,a.__dict__['3d_max_cpus'])
-        print(f'Rendered SVG artifacts from {csv_path}')
+        render(rows, a.out, meta, a.__dict__['3d_max_cpus'])
+        print(f'Rendered PNG artifacts from {csv_path}')
         return
     meta=metadata(); (a.out/'metadata.json').write_text(json.dumps(meta,indent=2)+'\n')
     if a.no_build:
@@ -201,6 +212,6 @@ def main():
         exe = build(ROOT/'cmake-build-topology')
     csv_path=a.out/'results.csv'; run_args=[exe,'--output',csv_path,'--max-cpus',str(a.max_cpus),'--transfers',str(a.transfers),'--rounds',str(a.rounds),'--warmups',str(a.warmups),'--min-sample-ms',str(a.min_sample_ms),'--producer-shard',str(a.producer_shard),'--producer-shards',str(a.producer_shards)] + (['--widths',a.widths] if a.widths else []); command(run_args); meta['benchmark']={'calibration_transfers':a.transfers,'min_sample_ms':a.min_sample_ms,'rounds':a.rounds,'warmups':a.warmups,'producer_shard':a.producer_shard,'producer_shards':a.producer_shards,'widths':a.widths or 'all supported'}; (a.out/'metadata.json').write_text(json.dumps(meta,indent=2)+'\n')
     rows=aggregate(load(csv_path)); (a.out/'summary.json').write_text(json.dumps(rows,indent=2)+'\n')
-    max_width=max(map(lambda r:int(r['width']),rows),default=0); svg_heatmap(rows,0,a.out/'scalar-heatmap.svg',meta); svg_heatmap(rows,max_width,a.out/f'fixed-{max_width}-heatmap.svg',meta); svg_depth(rows,a.out/'width-depth.svg',meta); svg_voxel_cube(rows,a.out/'topology-3d-heatmap.svg',meta,a.__dict__['3d_max_cpus'])
-    print(f'Wrote {csv_path}, summary.json, scalar-heatmap.svg, fixed-{max_width}-heatmap.svg, width-depth.svg, topology-3d-heatmap.svg')
+    render(rows, a.out, meta, a.__dict__['3d_max_cpus'])
+    print(f'Wrote {csv_path}, summary.json, scalar-heatmap.png, fixed-{max((int(r["width"]) for r in rows), default=0)}-heatmap.png, width-depth.png, topology-voxel-cube.png')
 if __name__ == '__main__': main()

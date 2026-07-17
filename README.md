@@ -162,14 +162,20 @@ ARM batch staging). Diagonal cells are excluded: a queue needs distinct
 producer and consumer threads. CSV rows also record socket/core/SMT data where
 Linux exposes it, hard-pin success, raw rounds, and median summaries.
 
-All generated graphics use local embedded rainbow scale matching supplied
-reference: **blue = slow throughput; red = fast throughput**. Every graphic has
-its own labeled linear M-items/s legend. Matrix rows are producers and columns
-are consumers; striped diagonal means excluded self-pair, light gray means
-missing measurement. 3D graphic is static volumetric isometric cube: X producer
-CPU group, Y consumer CPU group, Z API/batch mode, color throughput. Large hosts
-use up to 12 contiguous CPU groups per dimension so cube stays readable; hover
-cell gives exact aggregated value and CSV remains exact per-path source.
+Published topology graphics are high-resolution PNG files. They use local
+reference-inspired rainbow scale: **blue = slow throughput; red = fast
+throughput**. Each image has own labeled linear M-items/s scale. Matrix rows
+are producers; columns consumers. Hatched diagonal means excluded self-pair;
+light gray means missing measurement.
+
+3D view is rasterized static **voxel heat cube**, not exploded plane chart:
+X = producer CPU display bin, Y = consumer CPU display bin, Z = scalar/fixed
+batch mode, color = throughput. Each solid voxel is median of directed-pair
+medians in exact display-bin × display-bin × mode. Wide CPU spans use ten
+ordered display bins to avoid unreadable labels and hidden micro-voxels. Exact
+membership, expected/measured pair coverage, excluded self-pairs, and every
+voxel statistic live beside cube in `topology-voxel-cube-coverage.json`. PNG is
+static; exact directed-path values remain in linked CSV and `summary.json`.
 
 Quick calibrated local probe—four allowed logical CPUs, per-cell work scaled from
 a calibration pass to target at least 100 ms:
@@ -184,9 +190,9 @@ python3 tools/run_topology_matrix.py \
 
 | Host | CPU model | Scope | Modes | Status | Artifacts |
 |---|---|---:|---|---|---|
-| `f061-lab-gpu.lab.tickup.net` | Intel Xeon E5-2630L v3 | all 32 allowed logical CPUs; `32 × 31 = 992` ordered paths | Scalar | complete; 4,960 rows; hard-pinned | [scalar heatmap](docs/topology-matrix/linux-runs/fq-topology-f061-20260715-145151/scalar-heatmap.svg) · [3D topology heatmap](docs/topology-matrix/linux-runs/fq-topology-f061-20260715-145151/topology-3d-heatmap.svg) · [raw CSV](docs/topology-matrix/linux-runs/fq-topology-f061-20260715-145151/results.csv) · [median summary](docs/topology-matrix/linux-runs/fq-topology-f061-20260715-145151/summary.json) · [metadata](docs/topology-matrix/linux-runs/fq-topology-f061-20260715-145151/metadata.json) · [width chart](docs/topology-matrix/linux-runs/fq-topology-f061-20260715-145151/width-depth.svg) |
-| `s05u24-f177-lab.infra.tickup.io` | AMD EPYC 7702P | all 128 allowed logical CPUs; `128 × 127 = 16,256` ordered paths | Scalar + fixed 8 | complete; 162,560 rows; hard-pinned | [scalar heatmap](docs/topology-matrix/linux-runs/fq-epyc7702p-full/scalar-heatmap.svg) · [fixed-8 heatmap](docs/topology-matrix/linux-runs/fq-epyc7702p-full/fixed-8-heatmap.svg) · [3D topology heatmap](docs/topology-matrix/linux-runs/fq-epyc7702p-full/topology-3d-heatmap.svg) · [raw CSV](docs/topology-matrix/linux-runs/fq-epyc7702p-full/results.csv) · [median summary](docs/topology-matrix/linux-runs/fq-epyc7702p-full/summary.json) · [metadata](docs/topology-matrix/linux-runs/fq-epyc7702p-full/metadata.json) · [width chart](docs/topology-matrix/linux-runs/fq-epyc7702p-full/width-depth.svg) |
-| `f131-lab-ac.lab.tickup.net` | AMD EPYC 7702 | all 256 allowed logical CPUs; `256 × 255 = 65,280` ordered paths | Scalar | complete; 326,400 rows; hard-pinned | [scalar heatmap](docs/topology-matrix/linux-runs/fq-topology-f131-20260715-145148/scalar-heatmap.svg) · [3D topology heatmap](docs/topology-matrix/linux-runs/fq-topology-f131-20260715-145148/topology-3d-heatmap.svg) · [raw CSV](docs/topology-matrix/linux-runs/fq-topology-f131-20260715-145148/results.csv) · [median summary](docs/topology-matrix/linux-runs/fq-topology-f131-20260715-145148/summary.json) · [metadata](docs/topology-matrix/linux-runs/fq-topology-f131-20260715-145148/metadata.json) · [width chart](docs/topology-matrix/linux-runs/fq-topology-f131-20260715-145148/width-depth.svg) |
+| `f061-lab-gpu.lab.tickup.net` | Intel Xeon E5-2630L v3 | all 32 allowed logical CPUs; `32 × 31 = 992` ordered paths | Scalar | complete; 4,960 rows; hard-pinned | [scalar heatmap](docs/topology-matrix/linux-runs/fq-topology-f061-20260715-145151/scalar-heatmap.png) · [3D topology heatmap](docs/topology-matrix/linux-runs/fq-topology-f061-20260715-145151/topology-voxel-cube.png) · [raw CSV](docs/topology-matrix/linux-runs/fq-topology-f061-20260715-145151/results.csv) · [median summary](docs/topology-matrix/linux-runs/fq-topology-f061-20260715-145151/summary.json) · [metadata](docs/topology-matrix/linux-runs/fq-topology-f061-20260715-145151/metadata.json) · [width chart](docs/topology-matrix/linux-runs/fq-topology-f061-20260715-145151/width-depth.png) |
+| `s05u24-f177-lab.infra.tickup.io` | AMD EPYC 7702P | all 128 allowed logical CPUs; `128 × 127 = 16,256` ordered paths | Scalar + fixed 8 | complete; 162,560 rows; hard-pinned | [scalar heatmap](docs/topology-matrix/linux-runs/fq-epyc7702p-full/scalar-heatmap.png) · [fixed-8 heatmap](docs/topology-matrix/linux-runs/fq-epyc7702p-full/fixed-8-heatmap.png) · [3D topology heatmap](docs/topology-matrix/linux-runs/fq-epyc7702p-full/topology-voxel-cube.png) · [raw CSV](docs/topology-matrix/linux-runs/fq-epyc7702p-full/results.csv) · [median summary](docs/topology-matrix/linux-runs/fq-epyc7702p-full/summary.json) · [metadata](docs/topology-matrix/linux-runs/fq-epyc7702p-full/metadata.json) · [width chart](docs/topology-matrix/linux-runs/fq-epyc7702p-full/width-depth.png) |
+| `f131-lab-ac.lab.tickup.net` | AMD EPYC 7702 | all 256 allowed logical CPUs; `256 × 255 = 65,280` ordered paths | Scalar | complete; 326,400 rows; hard-pinned | [scalar heatmap](docs/topology-matrix/linux-runs/fq-topology-f131-20260715-145148/scalar-heatmap.png) · [3D topology heatmap](docs/topology-matrix/linux-runs/fq-topology-f131-20260715-145148/topology-voxel-cube.png) · [raw CSV](docs/topology-matrix/linux-runs/fq-topology-f131-20260715-145148/results.csv) · [median summary](docs/topology-matrix/linux-runs/fq-topology-f131-20260715-145148/summary.json) · [metadata](docs/topology-matrix/linux-runs/fq-topology-f131-20260715-145148/metadata.json) · [width chart](docs/topology-matrix/linux-runs/fq-topology-f131-20260715-145148/width-depth.png) |
 
 `f061` validation: 4,960 rows = 992 directed paths × scalar width × five timed
 rounds; every row has `pinned=1` and positive throughput. Median raw-sample
@@ -270,13 +276,16 @@ Fixed width 8 is unavailable on hosts where its initial validation returns
 0,8` only after host-specific width-8 probe succeeds.
 
 Artifacts land in `docs/topology-matrix/`:
-metadata.json       OS, compiler-adjacent and placement-confidence metadata
-results.csv         every pair × width × round; resumable raw measurements
-summary.json        median throughput for every pair × width
-scalar-heatmap.svg  scalar API producer-row → consumer-column matrix
-fixed-*-heatmap.svg largest supported fixed-width matrix
-width-depth.svg     median across all ordered pairs by scalar/fixed mode
-topology-3d-heatmap.svg exploded 3D CPU-pair plane × scalar/fixed-width depth overview
+
+```text
+results.csv                       raw per-round directed-pair data
+summary.json                      deterministic per-cell medians and samples
+metadata.json                     OS/CPU/placement/benchmark settings
+scalar-heatmap.png                raster producer-row → consumer-column matrix
+fixed-*-heatmap.png               raster largest supported fixed-width matrix
+width-depth.png                   raster median/min–max batch-mode comparison
+topology-voxel-cube.png           rasterized 3D producer-bin × consumer-bin × mode cube
+topology-voxel-cube-coverage.json exact display-bin membership and voxel coverage/statistics
 ```
 
 Linux uses `sched_getaffinity` and only tests CPUs allowed by cpuset/container
@@ -298,13 +307,15 @@ can be only a few milliseconds for fixed width 8. It remains a functional
 artifact, not benchmark evidence. Run calibrated samples as above before
 publishing pair-level conclusions.
 
-Graphs stay separate from README. SVG heatmap cells retain hover tooltips with exact
-median M items/s.
+Graphs stay separate from README. PNGs are static presentation artifacts; CSV
+remains exact directed-path source. Cube aggregation and coverage are explicit in
+companion JSON.
 
-- [Scalar API producer → consumer heatmap](docs/topology-matrix/amd-epyc-7702-dual/scalar-heatmap.svg)
-- [Fixed batch 8 producer → consumer heatmap](docs/topology-matrix/amd-epyc-7702-dual/fixed-8-heatmap.svg)
-- [Scalar/fixed-width depth graph](docs/topology-matrix/amd-epyc-7702-dual/width-depth.svg)
-- [3D CPU-from × CPU-to × width heat map](docs/topology-matrix/amd-epyc-7702-dual/topology-3d-heatmap.svg)
+- [Scalar API producer → consumer heatmap](docs/topology-matrix/amd-epyc-7702-dual/scalar-heatmap.png)
+- [Fixed batch 8 producer → consumer heatmap](docs/topology-matrix/amd-epyc-7702-dual/fixed-8-heatmap.png)
+- [Scalar/fixed-width distribution](docs/topology-matrix/amd-epyc-7702-dual/width-depth.png)
+- [3D producer × consumer × width voxel cube](docs/topology-matrix/amd-epyc-7702-dual/topology-voxel-cube.png)
+- [Voxel aggregation and coverage](docs/topology-matrix/amd-epyc-7702-dual/topology-voxel-cube-coverage.json)
 - [Raw results CSV](docs/topology-matrix/amd-epyc-7702-dual/results.csv), [median summary JSON](docs/topology-matrix/amd-epyc-7702-dual/summary.json), and [run metadata](docs/topology-matrix/amd-epyc-7702-dual/metadata.json)
 
 Aggregate median rates across all raw samples: Scalar API **299.104 M items/s**;
