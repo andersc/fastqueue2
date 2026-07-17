@@ -129,45 +129,54 @@ def bin_label(group):
     return str(group[0]) if len(group) == 1 else f'{group[0]}–{group[-1]}'
 
 def png_voxel_cube(rows, path: Path, meta: dict, max_cpus: int):
-    """Rasterized true 3D voxel volume; values aggregate exact pair medians per display bin."""
+    """Rasterized exact-cell 3D throughput volume; no CPU-bin aggregation."""
     plt, np, cmap = raster_modules()
-    cpus = cpus_for(rows, meta); widths = sorted({int(r['width']) for r in rows})
-    bins = cpu_bins(cpus, max_cpus or 10); n, zcount = len(bins), len(widths)
+    cpus = cpus_for(rows, meta)
+    # Keep every layer in order: scalar, width 1, width 2, …, max measured width.
+    # Unmeasured widths remain empty; renderer never fabricates throughput cells.
+    observed_widths = sorted({int(r['width']) for r in rows})
+    widths = list(range(max(observed_widths, default=0) + 1))
+    n, zcount = len(cpus), len(widths)
+    width_pos = {width: index for index, width in enumerate(widths)}
+    pos = {cpu: i for i, cpu in enumerate(cpus)}
     raw = {(int(r['producer_cpu']), int(r['consumer_cpu']), int(r['width'])): float(r['median_mps']) for r in rows}
-    volume = np.full((n, n, zcount), np.nan); coverage = []
-    for x, producers in enumerate(bins):
-        for y, consumers in enumerate(bins):
-            for z, width in enumerate(widths):
-                expected = len(producers) * len(consumers) - len(set(producers) & set(consumers))
-                values = [raw[p, c, width] for p in producers for c in consumers if (p, c, width) in raw]
-                coverage.append({'producer_display_bin': producers, 'consumer_display_bin': consumers,
-                                 'width': width, 'expected_pairs': expected, 'measured_pairs': len(values),
-                                 'excluded_self_pairs': len(set(producers) & set(consumers)),
-                                 'median_of_pair_medians_mps': median(values) if values else None})
-                if values: volume[x, y, z] = median(values)
+    volume = np.full((n, n, zcount), np.nan)
+    cells = []
+    for (producer, consumer, width), value in raw.items():
+        x, y, z = pos[producer], pos[consumer], width_pos[width]
+        volume[x, y, z] = value
+        cells.append({'producer_cpu': producer, 'consumer_cpu': consumer, 'width': width,
+                      'median_mps': value})
     path.with_name('topology-voxel-cube-coverage.json').write_text(json.dumps({
-        'aggregation': 'Each voxel is median of measured directed-pair medians in explicit display bins.',
-        'display_bins': [list(b) for b in bins], 'widths': widths, 'voxels': coverage}, indent=2)+'\n')
+        'rendering': 'One semi-transparent voxel per measured producer × consumer × mode cell; no CPU bins or aggregate medians.',
+        'cpu_order': cpus, 'widths': widths, 'measured_cell_count': len(cells), 'cells': cells}, indent=2)+'\n')
     values = volume[~np.isnan(volume)]; low, high = image_scale(values)
-    filled = ~np.isnan(volume); colors = cmap(np.clip((np.nan_to_num(volume, nan=low)-low)/(high-low), 0, 1))
-    # Alpha stays opaque: color still maps exactly to numeric legend. Missing voxels shown wireframe.
-    fig = plt.figure(figsize=(15, 12)); fig.subplots_adjust(left=.02, right=.82, bottom=.09, top=.90); ax = fig.add_subplot(projection='3d')
-    ax.voxels(filled, facecolors=colors, edgecolor=(.15, .18, .24, .30), linewidth=.32, shade=True)
-    # Dashed bounding frame makes cube depth legible even for a scalar-only one-layer volume.
-    ax.set_box_aspect((1, 1, max(.55, zcount / n * 2.2)))
+    filled = ~np.isnan(volume)
+    colors = cmap(np.clip((np.nan_to_num(volume, nan=low) - low) / (high - low), 0, 1))
+    # Semi-transparency exposes cells behind front faces. More cells need lower alpha.
+    cell_count = int(filled.sum())
+    alpha = .46 if cell_count <= 300 else .34 if cell_count <= 4000 else .24
+    colors[..., 3] = np.where(filled, alpha, 0.0)
+    fig = plt.figure(figsize=(16, 13)); fig.subplots_adjust(left=.01, right=.82, bottom=.08, top=.90)
+    ax = fig.add_subplot(projection='3d')
+    artists = ax.voxels(filled, facecolors=colors, edgecolor=(.10, .13, .20, .16),
+                        linewidth=.10, shade=False)
+    # Best available static-PNG alpha sorting in Matplotlib's painter renderer.
+    for artist in artists.values(): artist.set_zsort('average')
+    ax.set_box_aspect((1, 1, max(.16, zcount / n * 4.8)))
     ax.view_init(elev=26, azim=-52)
     tickstep=max(1, (n+9)//10); tickidx=list(range(0, n, tickstep))
-    ax.set_xticks([i+.5 for i in tickidx], [bin_label(bins[i]) for i in tickidx], fontsize=8)
-    ax.set_yticks([i+.5 for i in tickidx], [bin_label(bins[i]) for i in tickidx], fontsize=8)
+    ax.set_xticks([i+.5 for i in tickidx], [str(cpus[i]) for i in tickidx], fontsize=8)
+    ax.set_yticks([i+.5 for i in tickidx], [str(cpus[i]) for i in tickidx], fontsize=8)
     ax.set_zticks([i+.5 for i in range(zcount)], ['scalar' if w == 0 else f'width {w}' for w in widths], fontsize=8)
-    ax.set_xlabel('Producer CPU display bin', labelpad=13); ax.set_ylabel('Consumer CPU display bin', labelpad=13); ax.set_zlabel('API / batch mode', labelpad=9)
-    ax.set_title('Topology throughput — 3D voxel cube', weight='bold', pad=24)
-    ax.text2D(.5, .965, 'Each cube = median of directed-pair medians in display-bin × display-bin × mode. Blue = slow; red = fast.', transform=ax.transAxes, ha='center', fontsize=9)
+    ax.set_xlabel('Producer CPU', labelpad=13); ax.set_ylabel('Consumer CPU', labelpad=13); ax.set_zlabel('API / batch mode', labelpad=9)
+    ax.set_title('Topology throughput — exact-cell 3D heat cube', weight='bold', pad=24)
+    ax.text2D(.5, .965, 'One translucent cube = one measured producer → consumer → mode median. Blue = slow; red = fast.', transform=ax.transAxes, ha='center', fontsize=9)
     from matplotlib.cm import ScalarMappable
     from matplotlib.colors import Normalize
     sm=ScalarMappable(norm=Normalize(low, high), cmap=cmap); sm.set_array([])
     cb=fig.colorbar(sm, ax=ax, shrink=.62, pad=.08); cb.set_label('Median throughput (M items/s)\nscale local to cube', fontsize=9)
-    fig.text(.5, .025, f'{n} display bins retain CPU order; bin membership and complete/missing voxel coverage: topology-voxel-cube-coverage.json. {meta.get("placement_confidence", "")}', ha='center', fontsize=8)
+    fig.text(.5, .025, f'{cell_count:,} exact measured cells; transparent faces reveal depth. CPU order and every cell: topology-voxel-cube-coverage.json. {meta.get("placement_confidence", "")}', ha='center', fontsize=8)
     fig.savefig(path, dpi=180, facecolor='white')
     plt.close(fig)
 
@@ -192,7 +201,7 @@ def render(rows, out: Path, meta: dict, max_cpus: int):
 
 def main():
 
-    p=argparse.ArgumentParser(description=__doc__); p.add_argument('--out',type=Path,default=ROOT/'docs'/'topology-matrix'); p.add_argument('--max-cpus',type=int,default=0); p.add_argument('--3d-max-cpus',type=int,default=10,help='ordered CPU display bins per cube dimension; 0 uses 10 bins'); p.add_argument('--transfers',type=int,default=2162160,help='calibration transfers; exact multiple of all fixed widths'); p.add_argument('--min-sample-ms',type=int,default=0,help='calibrate every producer/to/width cell to at least this timed duration; 0 disables'); p.add_argument('--rounds',type=int,default=3); p.add_argument('--widths',default='',help='comma-separated widths; 0=scalar, empty=all supported widths'); p.add_argument('--warmups',type=int,default=1); p.add_argument('--producer-shard',type=int,default=0,help='zero-based producer-row shard'); p.add_argument('--producer-shards',type=int,default=1,help='total non-overlapping producer-row shards'); p.add_argument('--no-build',action='store_true'); p.add_argument('--render-only',action='store_true',help='regenerate PNGs from existing results.csv and metadata.json'); a=p.parse_args()
+    p=argparse.ArgumentParser(description=__doc__); p.add_argument('--out',type=Path,default=ROOT/'docs'/'topology-matrix'); p.add_argument('--max-cpus',type=int,default=0); p.add_argument('--3d-max-cpus',type=int,default=0,help='deprecated compatibility option; exact-cell cube never groups CPU data'); p.add_argument('--transfers',type=int,default=2162160,help='calibration transfers; exact multiple of all fixed widths'); p.add_argument('--min-sample-ms',type=int,default=0,help='calibrate every producer/to/width cell to at least this timed duration; 0 disables'); p.add_argument('--rounds',type=int,default=3); p.add_argument('--widths',default='',help='comma-separated widths; 0=scalar, empty=all supported widths'); p.add_argument('--warmups',type=int,default=1); p.add_argument('--producer-shard',type=int,default=0,help='zero-based producer-row shard'); p.add_argument('--producer-shards',type=int,default=1,help='total non-overlapping producer-row shards'); p.add_argument('--no-build',action='store_true'); p.add_argument('--render-only',action='store_true',help='regenerate PNGs from existing results.csv and metadata.json'); a=p.parse_args()
     a.out.mkdir(parents=True,exist_ok=True)
     csv_path=a.out/'results.csv'
     if a.render_only:

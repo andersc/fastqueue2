@@ -168,14 +168,16 @@ throughput**. Each image has own labeled linear M-items/s scale. Matrix rows
 are producers; columns consumers. Hatched diagonal means excluded self-pair;
 light gray means missing measurement.
 
-3D view is rasterized static **voxel heat cube**, not exploded plane chart:
-X = producer CPU display bin, Y = consumer CPU display bin, Z = scalar/fixed
-batch mode, color = throughput. Each solid voxel is median of directed-pair
-medians in exact display-bin × display-bin × mode. Wide CPU spans use ten
-ordered display bins to avoid unreadable labels and hidden micro-voxels. Exact
-membership, expected/measured pair coverage, excluded self-pairs, and every
-voxel statistic live beside cube in `topology-voxel-cube-coverage.json`. PNG is
-static; exact directed-path values remain in linked CSV and `summary.json`.
+3D view is rasterized static **exact-cell voxel heat cube**, not exploded plane chart:
+X = producer CPU, Y = consumer CPU, Z = scalar/fixed batch mode, color =
+throughput. Z layers always print in numeric order: `scalar`, `width 1`,
+`width 2`, … through highest supported width; unmeasured layers remain visibly
+empty. Each semi-transparent voxel is one measured directed-pair median:
+no CPU groups, no bin statistics, no aggregate medians. Transparency exposes
+cells behind front faces; subtle cell edges preserve depth. CPU tick labels thin
+only labels, never data. Exact CPU order and every rendered cell live beside
+cube in `topology-voxel-cube-coverage.json`. PNG is static; exact directed-path
+values remain in linked CSV and `summary.json`.
 
 Quick calibrated local probe—four allowed logical CPUs, per-cell work scaled from
 a calibration pass to target at least 100 ms:
@@ -188,28 +190,27 @@ python3 tools/run_topology_matrix.py \
 
 ### Completed full-span Linux results
 
-| Host | CPU model | Scope | Modes | Status | Artifacts |
-|---|---|---:|---|---|---|
-| `f061-lab-gpu.lab.tickup.net` | Intel Xeon E5-2630L v3 | all 32 allowed logical CPUs; `32 × 31 = 992` ordered paths | Scalar | complete; 4,960 rows; hard-pinned | [scalar heatmap](docs/topology-matrix/linux-runs/fq-topology-f061-20260715-145151/scalar-heatmap.png) · [3D topology heatmap](docs/topology-matrix/linux-runs/fq-topology-f061-20260715-145151/topology-voxel-cube.png) · [raw CSV](docs/topology-matrix/linux-runs/fq-topology-f061-20260715-145151/results.csv) · [median summary](docs/topology-matrix/linux-runs/fq-topology-f061-20260715-145151/summary.json) · [metadata](docs/topology-matrix/linux-runs/fq-topology-f061-20260715-145151/metadata.json) · [width chart](docs/topology-matrix/linux-runs/fq-topology-f061-20260715-145151/width-depth.png) |
-| `s05u24-f177-lab.infra.tickup.io` | AMD EPYC 7702P | all 128 allowed logical CPUs; `128 × 127 = 16,256` ordered paths | Scalar + fixed 8 | complete; 162,560 rows; hard-pinned | [scalar heatmap](docs/topology-matrix/linux-runs/fq-epyc7702p-full/scalar-heatmap.png) · [fixed-8 heatmap](docs/topology-matrix/linux-runs/fq-epyc7702p-full/fixed-8-heatmap.png) · [3D topology heatmap](docs/topology-matrix/linux-runs/fq-epyc7702p-full/topology-voxel-cube.png) · [raw CSV](docs/topology-matrix/linux-runs/fq-epyc7702p-full/results.csv) · [median summary](docs/topology-matrix/linux-runs/fq-epyc7702p-full/summary.json) · [metadata](docs/topology-matrix/linux-runs/fq-epyc7702p-full/metadata.json) · [width chart](docs/topology-matrix/linux-runs/fq-epyc7702p-full/width-depth.png) |
-| `f131-lab-ac.lab.tickup.net` | AMD EPYC 7702 | all 256 allowed logical CPUs; `256 × 255 = 65,280` ordered paths | Scalar | complete; 326,400 rows; hard-pinned | [scalar heatmap](docs/topology-matrix/linux-runs/fq-topology-f131-20260715-145148/scalar-heatmap.png) · [3D topology heatmap](docs/topology-matrix/linux-runs/fq-topology-f131-20260715-145148/topology-voxel-cube.png) · [raw CSV](docs/topology-matrix/linux-runs/fq-topology-f131-20260715-145148/results.csv) · [median summary](docs/topology-matrix/linux-runs/fq-topology-f131-20260715-145148/summary.json) · [metadata](docs/topology-matrix/linux-runs/fq-topology-f131-20260715-145148/metadata.json) · [width chart](docs/topology-matrix/linux-runs/fq-topology-f131-20260715-145148/width-depth.png) |
+| CPU model | Scope | Modes | Status | Artifacts |
+|---|---:|---|---|---|
+| Intel Xeon E5-2630L v3 | all 32 allowed logical CPUs; `32 × 31 = 992` ordered paths | Scalar | complete; 4,960 rows; hard-pinned | [scalar heatmap](docs/topology-matrix/linux-runs/intel-xeon-e5-2630l-v3-20260715-145151/scalar-heatmap.png) · [3D topology heat cube](docs/topology-matrix/linux-runs/intel-xeon-e5-2630l-v3-20260715-145151/topology-voxel-cube.png) · [raw CSV](docs/topology-matrix/linux-runs/intel-xeon-e5-2630l-v3-20260715-145151/results.csv) · [median summary](docs/topology-matrix/linux-runs/intel-xeon-e5-2630l-v3-20260715-145151/summary.json) · [metadata](docs/topology-matrix/linux-runs/intel-xeon-e5-2630l-v3-20260715-145151/metadata.json) · [width chart](docs/topology-matrix/linux-runs/intel-xeon-e5-2630l-v3-20260715-145151/width-depth.png) |
+| AMD EPYC 7702P | all 128 allowed logical CPUs; `128 × 127 = 16,256` ordered paths | Scalar + fixed 8 | complete; 162,560 rows; hard-pinned | [scalar heatmap](docs/topology-matrix/linux-runs/amd-epyc-7702p-20260715/scalar-heatmap.png) · [fixed-8 heatmap](docs/topology-matrix/linux-runs/amd-epyc-7702p-20260715/fixed-8-heatmap.png) · [3D topology heat cube](docs/topology-matrix/linux-runs/amd-epyc-7702p-20260715/topology-voxel-cube.png) · [raw CSV](docs/topology-matrix/linux-runs/amd-epyc-7702p-20260715/results.csv) · [median summary](docs/topology-matrix/linux-runs/amd-epyc-7702p-20260715/summary.json) · [metadata](docs/topology-matrix/linux-runs/amd-epyc-7702p-20260715/metadata.json) · [width chart](docs/topology-matrix/linux-runs/amd-epyc-7702p-20260715/width-depth.png) |
+| AMD EPYC 7702 | all 256 allowed logical CPUs; `256 × 255 = 65,280` ordered paths | Scalar | complete; 326,400 rows; hard-pinned | [scalar heatmap](docs/topology-matrix/linux-runs/amd-epyc-7702-20260715-145148/scalar-heatmap.png) · [3D topology heat cube](docs/topology-matrix/linux-runs/amd-epyc-7702-20260715-145148/topology-voxel-cube.png) · [raw CSV](docs/topology-matrix/linux-runs/amd-epyc-7702-20260715-145148/results.csv) · [median summary](docs/topology-matrix/linux-runs/amd-epyc-7702-20260715-145148/summary.json) · [metadata](docs/topology-matrix/linux-runs/amd-epyc-7702-20260715-145148/metadata.json) · [width chart](docs/topology-matrix/linux-runs/amd-epyc-7702-20260715-145148/width-depth.png) |
 
-`f061` validation: 4,960 rows = 992 directed paths × scalar width × five timed
+`Intel Xeon E5-2630L v3` validation: 4,960 rows = 992 directed paths × scalar width × five timed
 rounds; every row has `pinned=1` and positive throughput. Median raw-sample
 throughput is 190.984 M items/s (range 12.087–420.108). Fixed width remains
-excluded because host width-8 probe returned invalid pin/rate data.
+excluded because this CPU's width-8 probe returned invalid pin/rate data.
 
-`f177` validation: 162,560 rows = 16,256 directed paths × two modes (scalar,
+`AMD EPYC 7702P` validation: 162,560 rows = 16,256 directed paths × two modes (scalar,
 fixed width 8) × five timed rounds; every row has `pinned=1` and positive
-throughput. Its median summary contains 32,512 path×mode entries. This host's
-custom legacy job directory is `/tmp/fq-epyc7702p-full`; remote helper status
-and harvest handle it directly.
+throughput. Its median summary contains 32,512 path×mode entries. Published
+artifacts contain no public host identifier.
 
-`f131` validation: 326,400 rows = 65,280 directed paths × scalar width × five
+`AMD EPYC 7702` validation: 326,400 rows = 65,280 directed paths × scalar width × five
 timed rounds; every row has `pinned=1` and positive throughput. Its median
 summary contains 65,280 path×width entries. Raw-sample median throughput is
 22.174 M items/s (range 12.558–397.337). Fixed width remains excluded because
-host width-8 probe returned invalid pin/rate data.
+this CPU's width-8 probe returned invalid pin/rate data.
 
 `--transfers` is calibration work, not necessarily timed work when
 `--min-sample-ms` is nonzero. Each CSV row records `effective_transfers` and
@@ -250,19 +251,19 @@ on each named host, then launches benchmark via remote `nohup`. Jobs survive
 local SSH disconnects and local-machine reboot. They do not survive remote host
 reboot. Each launch creates unique `/tmp/fq-topology-<host>-<timestamp>/` paths
 containing `run.pid`, `command.txt`, `launch.json`, `run.log`, source, build,
-and artifacts. Existing `f177` full-span job is detected and skipped; never
-reuse `/tmp/fq-epyc7702p-full`, because benchmark CSV opens with truncation.
+and artifacts. Existing full-span jobs are detected and skipped; never reuse a
+completed remote job directory, because benchmark CSV opens with truncation.
 
 ```bash
-# Launch safe scalar topology runs on f131/f061. Existing active f177 full-span job is skipped.
-python3 tools/remote_topology.py launch --hosts f131 f177 f061 \
+# Launch safe scalar topology runs. Existing full-span jobs are skipped.
+python3 tools/remote_topology.py launch --hosts <configured-hosts> \
   --transfers 720720 --min-sample-ms 100 --rounds 5 --warmups 1 --plot-cpus 0
 
 # Inspect remote PID, raw CSV row count, and latest progress/ETA without stopping jobs.
-python3 tools/remote_topology.py status --hosts f131 f177 f061
+python3 tools/remote_topology.py status --hosts <configured-hosts>
 
 # Copy only finished, fully rendered artifact sets into docs/topology-matrix/linux-runs/.
-python3 tools/remote_topology.py harvest --hosts f131 f177 f061
+python3 tools/remote_topology.py harvest --hosts <configured-hosts>
 ```
 
 Host matrices are independent: never merge CSVs from different CPU models or

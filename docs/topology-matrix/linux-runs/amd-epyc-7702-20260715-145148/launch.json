@@ -1,0 +1,12 @@
+{
+  "config": {
+    "action": "launch",
+    "min_sample_ms": 100,
+    "plot_cpus": 0,
+    "rounds": 5,
+    "transfers": 720720,
+    "warmups": 1
+  },
+  "source_revision": "bc40e674ba00cde5f41faa904aed04e22355dca0",
+  "started_utc": "2026-07-15T12:51:48Z"
+}
