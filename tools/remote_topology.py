@@ -48,20 +48,16 @@ def launch(args):
     tar = source_tarball()
     try:
         for label in args.hosts:
-            if label == "f177":
-                state = remote(label, "test -f /tmp/fq-epyc7702p-full/run.pid && kill -0 $(cat /tmp/fq-epyc7702p-full/run.pid) 2>/dev/null", check=False)
-                if state.returncode == 0:
-                    print("f177: active existing full-span job; skipped")
-                    continue
             out = run_dir(label)
             stage = f"/tmp/fastqueue2-topology-src-{label}-{int(time.time())}.tar.gz"
             with tar.open("rb") as src:
                 cp = subprocess.run(["scp", "-o", "BatchMode=yes", "-o", "ConnectTimeout=12", str(tar), f"{HOSTS[label]}:{stage}"], text=True, capture_output=True)
             if cp.returncode:
                 raise SystemExit(f"{label}: staging failed: {cp.stderr.strip()}")
+            widths_arg = f"--widths {shlex.quote(args.widths)} " if args.widths else ""
             cmd = (
                 f"cd {out}/src && python3 tools/run_topology_matrix.py "
-                f"--max-cpus 0 --widths {args.widths} --transfers {args.transfers} "
+                f"--max-cpus 0 {widths_arg}--transfers {args.transfers} "
                 f"--min-sample-ms {args.min_sample_ms} --rounds {args.rounds} "
                 f"--warmups {args.warmups} --3d-max-cpus {args.plot_cpus} --out {out}/artifacts"
             )
@@ -92,13 +88,11 @@ echo {out}
 
 
 def job_dir(label):
-    if label == "f177":
-        return "/tmp/fq-epyc7702p-full"
     return remote(label, "ls -dt /tmp/fq-topology-" + label + "-* 2>/dev/null | head -1", check=False).stdout.strip()
 
 
 def job_artifacts_dir(label, directory):
-    return directory if label == "f177" else f"{directory}/artifacts"
+    return f"{directory}/artifacts"
 
 
 def status(args):
@@ -151,7 +145,7 @@ def main():
     p.add_argument("--rounds", type=int, default=5)
     p.add_argument("--warmups", type=int, default=1)
     p.add_argument("--plot-cpus", type=int, default=0)
-    p.add_argument("--widths", default="0", help="comma-separated modes; default scalar only")
+    p.add_argument("--widths", default="", help="comma-separated modes; empty runs all supported widths (0=scalar)")
     a = p.parse_args()
     {"launch": launch, "status": status, "harvest": harvest}[a.action](a)
 

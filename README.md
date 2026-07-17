@@ -251,11 +251,12 @@ on each named host, then launches benchmark via remote `nohup`. Jobs survive
 local SSH disconnects and local-machine reboot. They do not survive remote host
 reboot. Each launch creates unique `/tmp/fq-topology-<host>-<timestamp>/` paths
 containing `run.pid`, `command.txt`, `launch.json`, `run.log`, source, build,
-and artifacts. Existing full-span jobs are detected and skipped; never reuse a
-completed remote job directory, because benchmark CSV opens with truncation.
+and artifacts. Never reuse a completed remote job directory, because benchmark
+CSV opens with truncation. Default width selection is empty, meaning every
+width supported by target binary: scalar plus widths 1 through target maximum.
 
 ```bash
-# Launch safe scalar topology runs. Existing full-span jobs are skipped.
+# Launch fresh full-width topology runs: scalar plus every target-supported fixed width.
 python3 tools/remote_topology.py launch --hosts <configured-hosts> \
   --transfers 720720 --min-sample-ms 100 --rounds 5 --warmups 1 --plot-cpus 0
 
@@ -272,9 +273,11 @@ time, and benchmark arguments. Harvest does not copy a running or incomplete
 result. Validate each harvested `results.csv` for expected pair/mode/round
 coverage and `pinned=1` before publishing links.
 
-Fixed width 8 is unavailable on hosts where its initial validation returns
-`pinned=0` or zero rate. Launcher uses scalar-only by default; add `--widths
-0,8` only after host-specific width-8 probe succeeds.
+A target width is publishable only when every producer→consumer pair and timed
+round has `pinned=1` and finite positive rate. Empty Z layers mean no valid
+measurement exists; renderer never fabricates throughput. To request restricted
+modes for a quick probe, pass `--widths 0,8`; default launcher mode is full
+supported-width coverage.
 
 Artifacts land in `docs/topology-matrix/`:
 
