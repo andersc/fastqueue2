@@ -240,36 +240,31 @@ private:
     }
 
     static inline void copyContiguous(T* destination, const T* source, uint64_t count) noexcept {
-        // SIMD only touches fully contiguous source/destination segments. Ring
-        // wrap remains split before this function, so no vector crosses ring or
-        // caller-batch bounds. AVX-512 handles eight pointers; AVX2 handles two
-        // four-pointer chunks. Builds without ISA flags retain scalar path.
-        if constexpr (std::is_trivially_copyable_v<T>) {
+    // SIMD only touches fully contiguous source/destination segments. Ring
+    // wrap remains split before this function, so no vector crosses ring or
+    // caller-batch bounds. `std::array<T, CAP>` provides only alignof(T), not
+    // AVX alignment, so use unaligned AVX stores for ring destinations.
+    if constexpr (std::is_trivially_copyable_v<T>) {
 #if defined(__AVX512F__)
-            if (count == 8) {
-                const __m512i values = _mm512_loadu_si512(static_cast<const void*>(source));
-                _mm512_storeu_si512(static_cast<void*>(destination), values);
-                return;
-            }
-#elif defined(__AVX2__)
-            if (count >= 4) {
-                const __m256i first = _mm256_loadu_si256(
-                    reinterpret_cast<const __m256i*>(source));
-                _mm256_storeu_si256(reinterpret_cast<__m256i*>(destination), first);
-                if (count == 4) return;
-                if (count == 8) {
-                    const __m256i second = _mm256_loadu_si256(
-                        reinterpret_cast<const __m256i*>(source + 4));
-                    _mm256_storeu_si256(reinterpret_cast<__m256i*>(destination + 4), second);
-                    return;
-                }
-                destination += 4;
-                source += 4;
-                count -= 4;
-            }
-#endif
+        if (count == 8) {
+            const __m512i values = _mm512_loadu_si512(static_cast<const void*>(source));
+            _mm512_storeu_si512(static_cast<void*>(destination), values);
+            return;
         }
+#elif defined(__AVX2__)
+        if (count == 8) {
+            const __m256i first = _mm256_loadu_si256(
+                reinterpret_cast<const __m256i*>(source));
+            const __m256i second = _mm256_loadu_si256(
+                reinterpret_cast<const __m256i*>(source + 4));
+            _mm256_storeu_si256(reinterpret_cast<__m256i*>(destination), first);
+            _mm256_storeu_si256(reinterpret_cast<__m256i*>(destination + 4), second);
+            return;
+        }
+#endif
+    }
         switch (count) {
+            case 8: destination[7] = source[7]; [[fallthrough]];
             case 7: destination[6] = source[6]; [[fallthrough]];
             case 6: destination[5] = source[5]; [[fallthrough]];
             case 5: destination[4] = source[4]; [[fallthrough]];
