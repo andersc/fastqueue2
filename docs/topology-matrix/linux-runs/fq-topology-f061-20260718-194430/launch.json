@@ -1,0 +1,12 @@
+{
+  "config": {
+    "min_sample_ms": 100,
+    "plot_cpus": 0,
+    "rounds": 5,
+    "transfers": 720720,
+    "warmups": 1,
+    "widths": ""
+  },
+  "source_revision": "b590d2fc94dcbf7a6cbbc95a0495b25078d2d4d5",
+  "started_utc": "2026-07-18T17:44:31Z"
+}

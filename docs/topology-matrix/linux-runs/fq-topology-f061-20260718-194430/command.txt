@@ -1,0 +1,1 @@
+Full-width topology matrix benchmark: scalar plus fixed batch widths 1 through 8.
