@@ -44,6 +44,60 @@ def run_dir(label):
     return f"/tmp/fq-topology-{label}-{time.strftime('%Y%m%d-%H%M%S')}"
 
 
+def isolation_preflight_script(out: str, seconds: int) -> str:
+    """Record host activity before benchmark starts; never claim OS isolation."""
+    return f'''set -eu
+out={shlex.quote(out)}
+python3 - {shlex.quote(out)} {seconds} <<'PY'
+import json, os, pathlib, subprocess, sys, time
+out, seconds = sys.argv[1], int(sys.argv[2])
+def cpu_times():
+    rows = {{}}
+    for line in pathlib.Path('/proc/stat').read_text().splitlines():
+        fields = line.split()
+        if not fields or not fields[0].startswith('cpu') or fields[0] == 'cpu':
+            continue
+        try:
+            values = [int(x) for x in fields[1:]]
+        except ValueError:
+            continue
+        total = sum(values); idle = values[3] + (values[4] if len(values) > 4 else 0)
+        rows[fields[0][3:]] = (total, idle)
+    return rows
+before = cpu_times(); time.sleep(seconds); after = cpu_times()
+activity = {{}}
+for cpu, (total0, idle0) in before.items():
+    total1, idle1 = after.get(cpu, (total0, idle0)); delta = total1 - total0
+    activity[cpu] = 0.0 if delta <= 0 else round(100.0 * (delta - (idle1 - idle0)) / delta, 3)
+def capture(cmd):
+    p = subprocess.run(cmd, text=True, capture_output=True)
+    return p.stdout if p.returncode == 0 else ''
+processes = []
+for line in capture(['ps', '-eLo', 'pid,ppid,user,psr,pcpu,stat,comm,args', '--no-headers']).splitlines():
+    fields = line.split(None, 7)
+    if len(fields) >= 7:
+        processes.append({{'pid': fields[0], 'ppid': fields[1], 'user': fields[2], 'cpu': fields[3], 'cpu_pct': fields[4], 'state': fields[5], 'command': fields[6], 'args': fields[7] if len(fields) == 8 else ''}})
+data = {{
+  'schema': 1,
+  'captured_utc': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()),
+  'sample_seconds': seconds,
+  'per_cpu_busy_pct': activity,
+  'processes': processes,
+  'loadavg': pathlib.Path('/proc/loadavg').read_text().strip(),
+  'online_cpus': pathlib.Path('/sys/devices/system/cpu/online').read_text().strip(),
+  'governor': {{p.name: p.read_text().strip() for p in pathlib.Path('/sys/devices/system/cpu').glob('cpu*/cpufreq/scaling_governor')}},
+  'irq_affinity': {{p.name: p.read_text().strip() for p in pathlib.Path('/proc/irq').glob('*/smp_affinity_list') if p.is_file()}},
+  'controls': [
+    'benchmark workers use sched_setaffinity hard logical-CPU pinning',
+    'preflight records host activity and runnable processes before launch',
+    'no claim of IRQ, kernel-work, thermal, or frequency isolation'
+  ]
+}}
+pathlib.Path(out).write_text(json.dumps(data, indent=2, sort_keys=True) + '\\n')
+PY
+'''
+
+
 def launch(args):
     tar = source_tarball()
     try:
@@ -67,6 +121,7 @@ mkdir -p {out}/src
 if test -e {out}/run.pid; then echo 'refuse existing output'; exit 2; fi
 tar -xzf {stage} -C {out}/src
 rm -f {stage}
+{isolation_preflight_script(out + '/isolation-preflight.json', args.preflight_seconds)}
 cd {out}/src
 if command -v cmake >/dev/null 2>&1; then
   cmake -S . -B cmake-build-release -DCMAKE_BUILD_TYPE=Release
@@ -132,7 +187,7 @@ def harvest(args):
         if label == "f177":
             local(["scp", "-o", "BatchMode=yes", "-o", "ConnectTimeout=12", f"{HOSTS[label]}:{d}/run.log", f"{HOSTS[label]}:{d}/run.pid", str(target)])
         else:
-            local(["scp", "-o", "BatchMode=yes", "-o", "ConnectTimeout=12", f"{HOSTS[label]}:{d}/launch.json", f"{HOSTS[label]}:{d}/command.txt", str(target)])
+            local(["scp", "-o", "BatchMode=yes", "-o", "ConnectTimeout=12", f"{HOSTS[label]}:{d}/launch.json", f"{HOSTS[label]}:{d}/command.txt", f"{HOSTS[label]}:{d}/isolation-preflight.json", str(target)])
         print(f"{label}: harvested {target}")
 
 
@@ -144,6 +199,8 @@ def main():
     p.add_argument("--min-sample-ms", type=int, default=100)
     p.add_argument("--rounds", type=int, default=5)
     p.add_argument("--warmups", type=int, default=1)
+    p.add_argument("--preflight-seconds", type=int, default=10,
+                   help="seconds of host activity captured before remote launch")
     p.add_argument("--plot-cpus", type=int, default=0)
     p.add_argument("--widths", default="", help="comma-separated modes; empty runs all supported widths (0=scalar)")
     a = p.parse_args()
