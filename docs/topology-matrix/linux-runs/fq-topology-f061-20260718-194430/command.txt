@@ -1,1 +1,3 @@
 Full-width topology matrix benchmark: scalar plus fixed batch widths 1 through 8.
+
+Repair provenance: original rows incident to logical CPUs 3 or 19 were replaced after a controlled clean rerun. The rerun used same 32-CPU universe, widths 0..8, 720720 calibration transfers, 100 ms minimum sample duration, one warmup, and five timed rounds. It replaced 5,490 rows (122 directed paths × 9 modes × 5 rounds); all other rows remain from original run. Pre-run target CPU samples were idle after known unrestricted user workloads were moved off CPUs 3 and 19. Every replacement row was hard-pinned and had finite positive throughput.

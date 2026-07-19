@@ -198,9 +198,12 @@ python3 tools/run_topology_matrix.py \
 
 `Intel Xeon E5-2630L v3` full-width validation: 44,640 rows = 992 directed paths × scalar plus
 fixed widths 1–8 × five timed rounds; every row has `pinned=1` and finite positive
-throughput. Its 8,928 path×mode medians drive one exact semi-transparent cube cell
-per measured producer × consumer × layer. Previous scalar-only archive remains
-preserved separately.
+throughput. Original measurements incident to CPUs 3 or 19 showed CPU-3 external-workload
+contention. All 5,490 incident rows (122 paths × nine modes × five rounds) were replaced
+with a clean matching-settings rerun after known unrestricted workloads were moved off both
+target CPUs; untouched paths retain original raw samples. Its 8,928 path×mode medians drive one
+exact semi-transparent cube cell per measured producer × consumer × layer. Previous scalar-only
+archive remains preserved separately.
 
 `AMD EPYC 7702P` validation: 162,560 rows = 16,256 directed paths × two modes (scalar,
 fixed width 8) × five timed rounds; every row has `pinned=1` and positive
