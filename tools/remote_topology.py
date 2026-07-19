@@ -217,20 +217,22 @@ shopt -s nullglob
 found=0
 for pidfile in /tmp/fq-topology-*/run.pid; do
   dir=${pidfile%/run.pid}
-  pid=$(cat "$pidfile" 2>/dev/null || true)
-  test -n "$pid" || continue
-  if kill -0 "$pid" 2>/dev/null; then
-    found=1
-    echo "STOP DIR=$dir PID=$pid"
-    kill -TERM -- "-$pid" 2>/dev/null || kill -TERM "$pid" 2>/dev/null || true
-    for _ in $(seq 1 20); do
-      kill -0 "$pid" 2>/dev/null || break
-      sleep 1
-    done
-    if kill -0 "$pid" 2>/dev/null; then
-      echo "KILL DIR=$dir PID=$pid"
-      kill -KILL -- "-$pid" 2>/dev/null || kill -KILL "$pid" 2>/dev/null || true
-    fi
+  # Detached shells can exit while benchmark descendants remain. pgrep excludes
+  # itself; directory token limits matches to this tool's managed job tree.
+  mapfile -t pids < <(pgrep -f -- "$dir/" || true)
+  ((${#pids[@]})) || continue
+  found=1
+  echo "STOP DIR=$dir PIDS=${pids[*]}"
+  kill -TERM "${pids[@]}" 2>/dev/null || true
+  alive=()
+  for _ in $(seq 1 20); do
+    mapfile -t alive < <(pgrep -f -- "$dir/" || true)
+    ((${#alive[@]})) || break
+    sleep 1
+  done
+  if ((${#alive[@]})); then
+    echo "KILL DIR=$dir PIDS=${alive[*]}"
+    kill -KILL "${alive[@]}" 2>/dev/null || true
   fi
 done
 if test "$found" = 0; then echo "NO_ACTIVE_TOPOLOGY_JOB"; fi
