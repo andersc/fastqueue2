@@ -222,6 +222,34 @@ this CPU's width-8 probe returned invalid pin/rate data.
 that affinity setup completed before timing begins. Exact FIFO validation runs
 for every transfer in calibration, warmup, and timed samples.
 
+### Matrix count and reliability tradeoff
+
+A 32-CPU matrix uses ordered non-self pairs: `32 × 31 = 992`, not `32 × 32`.
+`producer → consumer` and `consumer → producer` are separate measurements;
+`producer == consumer` is deliberately excluded. With scalar plus fixed widths
+1–8, there are nine modes, so the matrix has `992 × 9 = 8,928` measured
+pair×mode cells.
+
+Configured with five timed rounds, it writes `8,928 × 5 = 44,640` CSV data
+rows. This is the correct count for the published 32-CPU all-width archive.
+`32 × 32 × 9 × 5 = 46,080` would wrongly include 1,440 self-pair rows.
+`46,095` is not a valid count. `107,136` is also not a valid count for this
+five-round configuration; it was an erroneous progress report from a later
+12-round launch. Twelve rounds would produce `8,928 × 12 = 107,136` timed CSV
+rows, not five rounds.
+
+One warmup, when enabled, adds `8,928` executions but no CSV rows and no
+median inputs. Warmups prime code/data paths before timing; they are not
+recorded measurements.
+
+Five timed samples and their median reduce impact from transient scheduler
+preemption, frequency changes, and IRQ bursts. Calibrating every sample to a
+minimum duration improves stability because fixed timing overhead becomes a
+smaller share of each rate. More rounds improve confidence but multiply serial
+runtime exactly: 12 rounds cost 2.4× five rounds. They do not create full
+isolation: IRQs, kernel work, SMT contention, turbo behavior, and thermal or
+power drift remain possible.
+
 Full matrices grow quickly: `ordered_pairs × (1 + fixed_widths) ×
 (warmups + rounds)`. A 128-selected-CPU / eight-wide system has `128 × 127 ×
 9 = 145,152` pair×mode cells. At five rounds plus one warmup that is 870,912
