@@ -250,6 +250,16 @@ runtime exactly: 12 rounds cost 2.4× five rounds. They do not create full
 isolation: IRQs, kernel work, SMT contention, turbo behavior, and thermal or
 power drift remain possible.
 
+Each archive stores raw measurements plus host metadata. On Linux, metadata records
+NUMA-node membership for allowed CPUs from `sysfs`; renderer maps boundaries by displayed
+CPU order, so sparse/non-contiguous CPU IDs remain correct. Heatmaps draw dashed horizontal
+and vertical boundaries whenever more than one NUMA node appears. Same-domain quadrants lie
+on corresponding diagonal blocks; off-diagonal quadrants cross NUMA interconnect. Voxel cubes
+mark same boundaries on base plane and store them in coverage JSON. If NUMA sysfs is absent,
+physical-package membership is recorded and labelled as fallback; no topology boundary is
+claimed when neither source exists. Existing archives gain marks only after re-rendering from
+metadata containing topology data.
+
 Full matrices grow quickly: `ordered_pairs × (1 + fixed_widths) ×
 (warmups + rounds)`. A 128-selected-CPU / eight-wide system has `128 × 127 ×
 9 = 145,152` pair×mode cells. At five rounds plus one warmup that is 870,912

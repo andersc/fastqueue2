@@ -17,6 +17,35 @@ def command(args, **kwargs):
     print('+', ' '.join(map(str, args)))
     return subprocess.run(args, check=True, text=True, **kwargs)
 
+def linux_topology(allowed):
+    """Read NUMA membership first; package IDs are an explicitly marked fallback."""
+    root = Path('/sys/devices/system/node')
+    domains = []
+    for node in sorted(root.glob('node[0-9]*'), key=lambda p: int(p.name[4:])):
+        text = (node/'cpulist').read_text().strip() if (node/'cpulist').exists() else ''
+        cpus = []
+        for part in text.split(','):
+            if not part: continue
+            bounds = part.split('-', 1)
+            try:
+                cpus.extend(range(int(bounds[0]), int(bounds[-1]) + 1))
+            except ValueError:
+                continue
+        selected = sorted(set(cpus) & set(allowed))
+        if selected: domains.append({'id': int(node.name[4:]), 'cpus': selected})
+    if domains:
+        return {'kind': 'NUMA node', 'source': 'Linux sysfs node*/cpulist', 'domains': domains}
+    packages = {}
+    for cpu in allowed:
+        p = Path(f'/sys/devices/system/cpu/cpu{cpu}/topology/physical_package_id')
+        try: packages.setdefault(int(p.read_text().strip()), []).append(cpu)
+        except (OSError, ValueError): pass
+    if packages:
+        return {'kind': 'physical package (NUMA unavailable)', 'source': 'Linux sysfs physical_package_id fallback',
+                'domains': [{'id': ident, 'cpus': cpus} for ident, cpus in sorted(packages.items())]}
+    return {'kind': 'unavailable', 'source': 'no Linux NUMA or package topology available', 'domains': []}
+
+
 def metadata():
     osname = platform.system()
     data = {"os": osname, "release": platform.release(), "machine": platform.machine(),
@@ -24,6 +53,7 @@ def metadata():
             "placement_confidence": "hard Linux logical-CPU pinning" if osname == "Linux" else "advisory macOS affinity; no hard logical-CPU pinning"}
     if osname == "Linux":
         data["allowed_cpus"] = sorted(os.sched_getaffinity(0))
+        data['topology_domains'] = linux_topology(data['allowed_cpus'])
         cpuinfo = Path('/proc/cpuinfo')
         if cpuinfo.exists():
             for line in cpuinfo.read_text(errors='replace').splitlines():
@@ -85,6 +115,26 @@ def cpus_for(rows, meta):
     # Retain declared CPU universe when metadata has it; otherwise exact measured IDs.
     return sorted(set(map(int, declared)) | measured)
 
+
+def domain_layout(cpus, meta):
+    """Map displayed CPU order to recorded NUMA/package domains, never CPU ranges."""
+    topology = meta.get('topology_domains', {})
+    domains = topology.get('domains', []) if isinstance(topology, dict) else []
+    lookup = {cpu: str(domain['id']) for domain in domains for cpu in domain.get('cpus', [])}
+    labels = [lookup.get(cpu, '?') for cpu in cpus]
+    boundaries = [i for i in range(1, len(labels)) if labels[i] != labels[i - 1]]
+    known = {label for label in labels if label != '?'}
+    return labels, boundaries, topology.get('kind', 'topology unavailable'), len(known) > 1
+
+
+def draw_domain_boundaries(ax, boundaries, n, kind, multiple):
+    if not multiple: return
+    for boundary in boundaries:
+        ax.axvline(boundary - .5, color='#111827', linewidth=1.25, linestyle='--', alpha=.85)
+        ax.axhline(boundary - .5, color='#111827', linewidth=1.25, linestyle='--', alpha=.85)
+    ax.text(.5, -.15, f'Dashed boundaries: {kind}; off-diagonal blocks cross-domain interconnect paths.',
+            transform=ax.transAxes, ha='center', va='top', fontsize=8)
+
 def image_scale(values):
     low, high = min(values, default=0.0), max(values, default=1.0)
     return (low, high if high > low else low + 1.0)
@@ -94,6 +144,7 @@ def mode_label(width): return 'Scalar API' if width == 0 else f'Fixed batch widt
 def png_heatmap(rows, width: int, path: Path, meta: dict):
     plt, np, cmap = raster_modules()
     cpus = cpus_for(rows, meta); n = len(cpus); pos = {cpu: i for i, cpu in enumerate(cpus)}
+    _, boundaries, domain_kind, multiple_domains = domain_layout(cpus, meta)
     cells = {(int(r['producer_cpu']), int(r['consumer_cpu'])): float(r['median_mps'])
              for r in rows if int(r['width']) == width}
     low, high = image_scale(list(cells.values()))
@@ -114,6 +165,7 @@ def png_heatmap(rows, width: int, path: Path, meta: dict):
     ax.set_title(f'{mode_label(width)} — directed producer → consumer throughput', weight='bold', pad=14)
     ax.text(.5, 1.01, f'Cell = median M items/s; scale local to this image. {meta.get("placement_confidence", "")}',
             transform=ax.transAxes, ha='center', va='bottom', fontsize=8)
+    draw_domain_boundaries(ax, boundaries, n, domain_kind, multiple_domains)
     cb = fig.colorbar(im, ax=ax, shrink=.83, pad=.025)
     cb.set_label('Median throughput (M items/s)\nblue = slow · red = fast', fontsize=9)
     ax.legend([plt.Rectangle((0, 0), 1, 1, facecolor='#d4dbe5', edgecolor='#64748b', hatch='///'),
@@ -132,6 +184,7 @@ def png_voxel_cube(rows, path: Path, meta: dict, max_cpus: int):
     """Rasterized exact-cell 3D throughput volume; no CPU-bin aggregation."""
     plt, np, cmap = raster_modules()
     cpus = cpus_for(rows, meta)
+    _, boundaries, domain_kind, multiple_domains = domain_layout(cpus, meta)
     # Keep every layer in order: scalar, width 1, width 2, …, max measured width.
     # Unmeasured widths remain empty; renderer never fabricates throughput cells.
     observed_widths = sorted({int(r['width']) for r in rows})
@@ -149,7 +202,8 @@ def png_voxel_cube(rows, path: Path, meta: dict, max_cpus: int):
                       'median_mps': value})
     path.with_name('topology-voxel-cube-coverage.json').write_text(json.dumps({
         'rendering': 'One semi-transparent voxel per measured producer × consumer × mode cell; no CPU bins or aggregate medians.',
-        'cpu_order': cpus, 'widths': widths, 'measured_cell_count': len(cells), 'cells': cells}, indent=2)+'\n')
+        'cpu_order': cpus, 'topology_domains': meta.get('topology_domains'),
+        'domain_boundaries_in_cpu_order': boundaries, 'widths': widths, 'measured_cell_count': len(cells), 'cells': cells}, indent=2)+'\n')
     values = volume[~np.isnan(volume)]; low, high = image_scale(values)
     filled = ~np.isnan(volume)
     colors = cmap(np.clip((np.nan_to_num(volume, nan=low) - low) / (high - low), 0, 1))
@@ -171,7 +225,12 @@ def png_voxel_cube(rows, path: Path, meta: dict, max_cpus: int):
     ax.set_zticks([i+.5 for i in range(zcount)], ['scalar' if w == 0 else f'width {w}' for w in widths], fontsize=8)
     ax.set_xlabel('Producer CPU', labelpad=13); ax.set_ylabel('Consumer CPU', labelpad=13); ax.set_zlabel('API / batch mode', labelpad=9)
     ax.set_title('Topology throughput — exact-cell 3D heat cube', weight='bold', pad=24)
-    ax.text2D(.5, .965, 'One translucent cube = one measured producer → consumer → mode median. Blue = slow; red = fast.', transform=ax.transAxes, ha='center', fontsize=9)
+    if multiple_domains:
+        for boundary in boundaries:
+            ax.plot([boundary, boundary], [0, n], [0, 0], color='#111827', linestyle='--', linewidth=1.2)
+            ax.plot([0, n], [boundary, boundary], [0, 0], color='#111827', linestyle='--', linewidth=1.2)
+    domain_note = f' Dashed base markers: {domain_kind}; off-diagonal blocks are cross-domain paths.' if multiple_domains else ''
+    ax.text2D(.5, .965, 'One translucent cube = one measured producer → consumer → mode median. Blue = slow; red = fast.' + domain_note, transform=ax.transAxes, ha='center', fontsize=9)
     from matplotlib.cm import ScalarMappable
     from matplotlib.colors import Normalize
     sm=ScalarMappable(norm=Normalize(low, high), cmap=cmap); sm.set_array([])
