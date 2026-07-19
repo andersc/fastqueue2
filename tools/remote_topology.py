@@ -12,7 +12,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 HOSTS = {
     "f131": "anders.cedronius@f131-lab-ac.lab.tickup.net",
-    "f177": "s05u24-f177-lab.infra.tickup.io",
+    "f177": "anders.cedronius@s05u24-f177-lab.infra.tickup.io",
     "f061": "anders.cedronius@f061-lab-gpu.lab.tickup.net",
 }
 SSH = ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=12"]
@@ -208,6 +208,43 @@ def job_artifacts_dir(label, directory):
     return f"{directory}/artifacts"
 
 
+def stop(args):
+    """Stop only jobs created by this tool; never match broad benchmark process names."""
+    failures = []
+    for label in args.hosts:
+        script = r'''set -eu
+shopt -s nullglob
+found=0
+for pidfile in /tmp/fq-topology-*/run.pid; do
+  dir=${pidfile%/run.pid}
+  pid=$(cat "$pidfile" 2>/dev/null || true)
+  test -n "$pid" || continue
+  if kill -0 "$pid" 2>/dev/null; then
+    found=1
+    echo "STOP DIR=$dir PID=$pid"
+    kill -TERM -- "-$pid" 2>/dev/null || kill -TERM "$pid" 2>/dev/null || true
+    for _ in $(seq 1 20); do
+      kill -0 "$pid" 2>/dev/null || break
+      sleep 1
+    done
+    if kill -0 "$pid" 2>/dev/null; then
+      echo "KILL DIR=$dir PID=$pid"
+      kill -KILL -- "-$pid" 2>/dev/null || kill -KILL "$pid" 2>/dev/null || true
+    fi
+  fi
+done
+if test "$found" = 0; then echo "NO_ACTIVE_TOPOLOGY_JOB"; fi
+'''
+        result = remote(label, script, check=False)
+        if result.stdout:
+            print(f"[{label}]\n{result.stdout}", end="")
+        if result.returncode:
+            print(f"[{label}] stop failed: {result.stderr.strip()}", file=sys.stderr)
+            failures.append(label)
+    if failures:
+        raise SystemExit("stop failed: " + ", ".join(failures))
+
+
 def status(args):
     for label in args.hosts:
         d = job_dir(label)
@@ -251,7 +288,7 @@ def harvest(args):
 
 def main():
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("action", choices=("launch", "status", "harvest"))
+    p.add_argument("action", choices=("launch", "stop", "status", "harvest"))
     p.add_argument("--hosts", nargs="+", choices=sorted(HOSTS), default=sorted(HOSTS))
     p.add_argument("--transfers", type=int, default=720720)
     p.add_argument("--min-sample-ms", type=int, default=100)
@@ -268,6 +305,6 @@ def main():
     p.add_argument("--plot-cpus", type=int, default=0)
     p.add_argument("--widths", default="", help="comma-separated modes; empty runs all supported widths (0=scalar)")
     a = p.parse_args()
-    {"launch": launch, "status": status, "harvest": harvest}[a.action](a)
+    {"launch": launch, "stop": stop, "status": status, "harvest": harvest}[a.action](a)
 
 if __name__ == "__main__": main()
