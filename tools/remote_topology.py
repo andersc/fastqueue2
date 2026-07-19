@@ -132,7 +132,65 @@ else
 fi
 printf '%s\\n' {shlex.quote(cmd)} > {out}/command.txt
 printf '%s\\n' '{json.dumps({'host': label, 'ssh': HOSTS[label], 'started_utc': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()), 'source_revision': subprocess.check_output(['git','rev-parse','HEAD'],cwd=ROOT,text=True).strip(), 'config': vars(args)}, sort_keys=True)}' > {out}/launch.json
-nohup bash -lc {shlex.quote(cmd)} > {out}/run.log 2>&1 < /dev/null &
+cat > {out}/run-isolated.sh <<'EOF'
+#!/usr/bin/env bash
+set -u
+out={shlex.quote(out)}
+cmd={shlex.quote(cmd)}
+governor={shlex.quote(args.governor)}
+rt_policy={shlex.quote(args.rt_policy)}
+rt_priority={args.rt_priority}
+state="$out/isolation-effective.json"
+restore="$out/governors-before.tsv"
+python3 - "$state" "$governor" "$rt_policy" "$rt_priority" <<'PY'
+import json, os, pathlib, sys, time
+out, governor, policy, priority = sys.argv[1:]
+cpus = pathlib.Path('/sys/devices/system/cpu')
+def governors():
+    return {{p.parent.parent.name: p.read_text().strip() for p in cpus.glob('cpu*/cpufreq/scaling_governor')}}
+def run(cmd):
+    import subprocess
+    p=subprocess.run(cmd,text=True,capture_output=True)
+    return {{'command':cmd,'returncode':p.returncode,'stdout':p.stdout.strip(),'stderr':p.stderr.strip()}}
+data={{'schema':1, 'requested':{{'governor':governor,'rt_policy':policy,'rt_priority':int(priority)}}, 'started_utc':time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()), 'before_governor':governors(), 'launcher_affinity':run(['taskset','-pc',str(os.getpid())]), 'launcher_scheduler':run(['chrt','-p',str(os.getpid())]), 'actions':[]}}
+pathlib.Path(out).write_text(json.dumps(data, indent=2, sort_keys=True)+'\\n')
+PY
+if [ "$governor" = performance ]; then
+  sudo -n true || {{ echo 'performance governor needs passwordless sudo' >> "$out/run.log"; exit 77; }}
+  : > "$restore"
+  for f in /sys/devices/system/cpu/cpu[0-9]*/cpufreq/scaling_governor; do
+    [ -r "$f" ] || continue
+    printf '%s\\t%s\\n' "$f" "$(cat "$f")" >> "$restore"
+    printf performance | sudo -n tee "$f" >/dev/null
+  done
+fi
+restore_governor() {{
+  [ -f "$restore" ] || return 0
+  while IFS=$'\\t' read -r f old; do printf '%s' "$old" | sudo -n tee "$f" >/dev/null || true; done < "$restore"
+}}
+trap restore_governor EXIT
+if [ "$rt_policy" != none ]; then
+  case "$rt_priority" in ''|*[!0-9]*) exit 78;; esac
+  [ "$rt_priority" -ge 1 ] && [ "$rt_priority" -le 99 ] || exit 78
+  sudo -n true || {{ echo 'RT scheduling needs passwordless sudo' >> "$out/run.log"; exit 77; }}
+  policy_flag=-r; [ "$rt_policy" = fifo ] && policy_flag=-f
+  sudo -n chrt "$policy_flag" "$rt_priority" bash -lc "$cmd"
+else
+  bash -lc "$cmd"
+fi
+rc=$?
+python3 - "$state" "$rc" <<'PY'
+import json, pathlib, subprocess, sys, time
+p=pathlib.Path(sys.argv[1]); d=json.loads(p.read_text()); d['finished_utc']=time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()); d['exit_code']=int(sys.argv[2])
+def run(c):
+ x=subprocess.run(c,text=True,capture_output=True); return {{'command':c,'returncode':x.returncode,'stdout':x.stdout.strip(),'stderr':x.stderr.strip()}}
+d['effective_before_restore']={{'governor':{{x.parent.parent.name:x.read_text().strip() for x in pathlib.Path('/sys/devices/system/cpu').glob('cpu*/cpufreq/scaling_governor')}},'launcher_scheduler':run(['chrt','-p',str(__import__('os').getpid())]),'launcher_affinity':run(['taskset','-pc',str(__import__('os').getpid())])}}
+p.write_text(json.dumps(d,indent=2,sort_keys=True)+'\\n')
+PY
+exit "$rc"
+EOF
+chmod 700 {out}/run-isolated.sh
+nohup {out}/run-isolated.sh > {out}/run.log 2>&1 < /dev/null &
 echo $! > {out}/run.pid
 echo {out}
 """
@@ -201,6 +259,12 @@ def main():
     p.add_argument("--warmups", type=int, default=1)
     p.add_argument("--preflight-seconds", type=int, default=10,
                    help="seconds of host activity captured before remote launch")
+    p.add_argument("--governor", choices=("none", "performance"), default="none",
+                   help="opt-in CPU governor control; restored after benchmark")
+    p.add_argument("--rt-policy", choices=("none", "fifo", "rr"), default="none",
+                   help="opt-in real-time policy for benchmark runner; needs sudo/CAP_SYS_NICE")
+    p.add_argument("--rt-priority", type=int, default=10,
+                   help="real-time priority (1..99); bounded default avoids maximum priority")
     p.add_argument("--plot-cpus", type=int, default=0)
     p.add_argument("--widths", default="", help="comma-separated modes; empty runs all supported widths (0=scalar)")
     a = p.parse_args()
