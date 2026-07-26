@@ -45,16 +45,17 @@ function drawHeatmap(cpus, domains, data, color) {
   axis(g.append('g'),false); axis(g.append('g'),true);
 }
 function drawScene(cpus, domains, data, color) {
-  const matrix = $('scene-view').value === 'matrix';
+  const matrix = $('scene-view').value === 'matrix', points = $('scene-matrix-style').value === 'points';
   $('scene-paths-label').hidden = matrix;
+  $('scene-matrix-style-label').hidden = !matrix;
   $('scene-title').childNodes[0].textContent = matrix ? '3D throughput heatmap ' : '3D topology explorer ';
   $('scene-note').textContent = matrix
-    ? 'Scientific 3D matrix: consumer CPU is X, producer CPU is Z, exact selected-mode median controls both bar height and color. This is not a smoothed surface.'
+    ? `Scientific 3D matrix: consumer CPU is X, producer CPU is Z. Exact selected-mode median controls color${points ? '; points stay on plane' : ' and bar height'}. This is not a smoothed surface.`
     : 'Topology links use deterministic domain rings, not physical motherboard geometry. Every visible arc is one selected, measured directed path.';
   $('scene-help').textContent = matrix
-    ? 'Drag to orbit. Scroll or pinch to zoom. Hover a bar for its exact directed-path median; click to select it. Diagonal and missing measurements are absent. Display filter hides cells only—viewer never aggregates or invents values.'
+    ? `Drag to orbit. Scroll or pinch to zoom. Hover a ${points ? 'point' : 'bar'} for its exact directed-path median; click to select it. Diagonal and missing measurements are absent. Display filter hides cells only—viewer never aggregates or invents values.`
     : 'Drag to orbit. Scroll or pinch to zoom. Hover an arc for exact selected-mode median; click it to select same producer → consumer path. Display filter reduces drawn links only—values remain unaggregated.';
-  if (matrix) drawMatrixScene(cpus, domains, data, color); else drawLinksScene(cpus, domains, data, color);
+  if (matrix) drawMatrixScene(cpus, domains, data, color, points); else drawLinksScene(cpus, domains, data, color);
 }
 function drawLinksScene(cpus, domains, data, color) {
  const host=$('scene'); stopScene(); hideTip(); host.replaceChildren();
@@ -76,7 +77,7 @@ function drawLinksScene(cpus, domains, data, color) {
  $('scene-home').onclick=()=>{yaw=.22;pitch=-.45;dist=22;}; $('scene-spin').onclick=e=>{spin=!spin;e.currentTarget.setAttribute('aria-pressed',spin);}; $('scene-motion').onclick=e=>{reduced=!reduced;if(reduced)spin=false;e.currentTarget.setAttribute('aria-pressed',reduced);$('scene-spin').setAttribute('aria-pressed',spin);};
  stopScene=()=>{cancelAnimationFrame(animationFrame); hideTip(); renderer.dispose(); nodeGeo.dispose(); links.forEach(line=>{line.geometry.dispose();line.material.dispose();}); host.replaceChildren(); stopScene=()=>{};};
 }
-function drawMatrixScene(cpus, domains, data, color) {
+function drawMatrixScene(cpus, domains, data, color, points) {
  const host=$('scene'); stopScene(); hideTip(); host.replaceChildren();
  if (!window.THREE || !webglAvailable()) { sceneFallback(host); return; }
  const W=Math.max(320,host.clientWidth),H=470,renderer=createRenderer(W,H);
@@ -85,16 +86,16 @@ function drawMatrixScene(cpus, domains, data, color) {
  host.append(renderer.domElement);
  const filter=$('filter').value, extent=d3.extent($('scale').value==='run'?rows:[...data.values()],r=>+r.median_mps), lo=extent[0], hi=extent[1], span=Math.max(hi-lo,Number.EPSILON), side=Math.max(cpus.length,2), pitch=14/side;
  const cells=[...data.values()].filter(r=>{const p=+r.producer_cpu,c=+r.consumer_cpu,same=domains.get(p)===domains.get(c); return p!==c && !((filter==='local'&&!same)||(filter==='remote'&&same));});
- const index=new Map(cpus.map((cpu,i)=>[cpu,i])), bars=makeMatrixBars(cells, index, side, pitch, lo, span, color); scene.add(bars);
+ const index=new Map(cpus.map((cpu,i)=>[cpu,i])), marks=points ? makeMatrixPoints(cells, index, side, pitch, color) : makeMatrixBars(cells, index, side, pitch, lo, span, color); scene.add(marks);
  const floor=new THREE.GridHelper(Math.max(14,side*pitch),Math.min(side,64),0x365477,0x1a3551); floor.position.y=0; scene.add(floor);
  const frame=new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(Math.max(14,side*pitch),7.3,Math.max(14,side*pitch))),new THREE.LineBasicMaterial({color:0x6fa6d6,transparent:true,opacity:.6})); frame.position.y=3.65; scene.add(frame);
  const labels=document.createElement('div'); labels.setAttribute('aria-hidden','true'); host.append(labels); let yaw=.65,pitchAngle=-.62,dist=22,drag,spin=false,reduced=matchMedia('(prefers-reduced-motion: reduce)').matches,hovered,animationFrame;
  function pose(){camera.position.set(dist*Math.cos(pitchAngle)*Math.sin(yaw),dist*Math.sin(pitchAngle)+3,dist*Math.cos(pitchAngle)*Math.cos(yaw));camera.lookAt(0,2,0);camera.updateMatrixWorld();}
  function frameLoop(){if(spin&&!reduced)yaw+=.0025;pose();renderer.render(scene,camera);animationFrame=requestAnimationFrame(frameLoop);} frameLoop();
  function pointerToNdc(e){const rect=renderer.domElement.getBoundingClientRect();return new THREE.Vector2(((e.clientX-rect.left)/rect.width)*2-1,-((e.clientY-rect.top)/rect.height)*2+1);}
- renderer.domElement.addEventListener('pointerdown',e=>{hideTip();drag=[e.clientX,e.clientY];renderer.domElement.setPointerCapture(e.pointerId);}); renderer.domElement.addEventListener('pointermove',e=>{if(drag){hideTip();yaw+=(e.clientX-drag[0])*.008;pitchAngle=Math.max(-1.53,Math.min(1.53,pitchAngle+(e.clientY-drag[1])*.008));drag=[e.clientX,e.clientY];return;}const ray=new THREE.Raycaster();ray.setFromCamera(pointerToNdc(e),camera);const hit=ray.intersectObject(bars,true)[0];if(hit){hovered=hit.object.userData.cells[Math.floor(hit.faceIndex/12)];showTip(e,hovered,+hovered.producer_cpu,+hovered.consumer_cpu,domains);}else{hovered=null;hideTip();}}); renderer.domElement.addEventListener('pointerleave',hideTip); renderer.domElement.addEventListener('pointerup',()=>drag=null); renderer.domElement.addEventListener('pointercancel',()=>{drag=null;hideTip();}); renderer.domElement.addEventListener('click',()=>{if(hovered){selected={p:+hovered.producer_cpu,c:+hovered.consumer_cpu};drawComparison();}});renderer.domElement.addEventListener('wheel',e=>{e.preventDefault();dist=Math.max(10,Math.min(55,dist+e.deltaY*.012));},{passive:false});
+ renderer.domElement.addEventListener('pointerdown',e=>{hideTip();drag=[e.clientX,e.clientY];renderer.domElement.setPointerCapture(e.pointerId);}); renderer.domElement.addEventListener('pointermove',e=>{if(drag){hideTip();yaw+=(e.clientX-drag[0])*.008;pitchAngle=Math.max(-1.53,Math.min(1.53,pitchAngle+(e.clientY-drag[1])*.008));drag=[e.clientX,e.clientY];return;}const ray=new THREE.Raycaster();ray.setFromCamera(pointerToNdc(e),camera);const hit=ray.intersectObject(marks,true)[0];if(hit){hovered=hit.object.userData.cells[Math.floor(hit.faceIndex/12)];showTip(e,hovered,+hovered.producer_cpu,+hovered.consumer_cpu,domains);}else{hovered=null;hideTip();}}); renderer.domElement.addEventListener('pointerleave',hideTip); renderer.domElement.addEventListener('pointerup',()=>drag=null); renderer.domElement.addEventListener('pointercancel',()=>{drag=null;hideTip();}); renderer.domElement.addEventListener('click',()=>{if(hovered){selected={p:+hovered.producer_cpu,c:+hovered.consumer_cpu};drawComparison();}});renderer.domElement.addEventListener('wheel',e=>{e.preventDefault();dist=Math.max(10,Math.min(55,dist+e.deltaY*.012));},{passive:false});
  $('scene-home').onclick=()=>{yaw=.65;pitchAngle=-.62;dist=22;}; $('scene-spin').onclick=e=>{spin=!spin;e.currentTarget.setAttribute('aria-pressed',spin);}; $('scene-motion').onclick=e=>{reduced=!reduced;if(reduced)spin=false;e.currentTarget.setAttribute('aria-pressed',reduced);$('scene-spin').setAttribute('aria-pressed',spin);};
- stopScene=()=>{cancelAnimationFrame(animationFrame);hideTip();bars.traverse(bar=>{bar.geometry?.dispose();bar.material?.dispose();});floor.geometry.dispose();floor.material.dispose();frame.geometry.dispose();frame.material.dispose();renderer.dispose();host.replaceChildren();stopScene=()=>{};};
+ stopScene=()=>{cancelAnimationFrame(animationFrame);hideTip();marks.traverse(mark=>{mark.geometry?.dispose();mark.material?.dispose();});floor.geometry.dispose();floor.material.dispose();frame.geometry.dispose();frame.material.dispose();renderer.dispose();host.replaceChildren();stopScene=()=>{};};
 }
 function createRenderer(width,height) {
  try {
@@ -108,6 +109,18 @@ function createRenderer(width,height) {
    if (error !== renderer.getContext().NO_ERROR) throw Error('WebGL render error '+error);
    return renderer;
  } catch (error) { console.warn('3D renderer unavailable',error); return null; }
+}
+function makeMatrixPoints(cells,index,side,pitch,color) {
+ const group=new THREE.Group(), chunkSize=7000, half=Math.max(pitch*.28,.018), height=Math.max(pitch*.04,.012);
+ const corners=[[-1,0,-1],[1,0,-1],[1,0,1],[-1,0,1],[-1,1,-1],[1,1,-1],[1,1,1],[-1,1,1]];
+ const faces=[0,1,2,0,2,3,4,6,5,4,7,6,0,4,5,0,5,1,1,5,6,1,6,2,2,6,7,2,7,3,3,7,4,3,4,0];
+ for(let offset=0;offset<cells.length;offset+=chunkSize) {
+   const chunk=cells.slice(offset,offset+chunkSize), vertices=[], colors=[], indices=[];
+   chunk.forEach((r,i)=>{const x=(index.get(+r.consumer_cpu)-(side-1)/2)*pitch, z=(index.get(+r.producer_cpu)-(side-1)/2)*pitch, rgb=new THREE.Color(color(+r.median_mps)); corners.forEach(([dx,dy,dz])=>{vertices.push(x+dx*half,dy*height,z+dz*half);colors.push(rgb.r,rgb.g,rgb.b);}); faces.forEach(v=>indices.push(i*8+v));});
+   const geometry=new THREE.BufferGeometry(); geometry.setAttribute('position',new THREE.Float32BufferAttribute(vertices,3)); geometry.setAttribute('color',new THREE.Float32BufferAttribute(colors,3)); geometry.setIndex(indices); geometry.computeBoundingSphere();
+   const mesh=new THREE.Mesh(geometry,new THREE.MeshBasicMaterial({vertexColors:true,transparent:true,opacity:1,side:THREE.DoubleSide})); mesh.userData.cells=chunk; group.add(mesh);
+ }
+ return group;
 }
 function makeMatrixBars(cells,index,side,pitch,lo,span,color) {
  const group=new THREE.Group(), chunkSize=7000, half=pitch*.44;
@@ -136,5 +149,5 @@ function drawComparison() {
  svg.append('g').selectAll('rect').data(rs).join('rect').attr('x',r=>x(+r.width)).attr('y',r=>y(+r.median_mps)).attr('width',x.bandwidth()).attr('height',r=>y(0)-y(+r.median_mps)).attr('fill',r=>rainbow((+r.median_mps)/max)); svg.append('g').attr('transform',`translate(0,${H-m.bottom})`).call(d3.axisBottom(x).tickFormat(labelWidth)); svg.append('g').attr('transform',`translate(${m.left},0)`).call(d3.axisLeft(y).ticks(4));
  $('details').innerHTML=`<dt>Path</dt><dd>CPU ${selected.p} → CPU ${selected.c}</dd><dt>Domain</dt><dd>${domainMap().get(selected.p)===domainMap().get(selected.c)?'same NUMA domain':'cross-NUMA / interconnect'}</dd><dt>Value</dt><dd>${(+rs.find(r=>+r.width===+$('width').value)?.median_mps).toFixed(3)} M items/s</dd>`;
 }
-async function start() { try { catalog=await json('viewer-runs.json'); $('run').replaceChildren(...catalog.runs.map(r=>new Option(r.label,r.id))); for(const id of ['run','width','scale','filter','scene-paths','scene-view']) $(id).addEventListener('change', id==='run'?loadRun:render); await loadRun(); } catch(e) { $('subtitle').textContent=`Viewer failed: ${e.message}. Use HTTPS GitHub Pages, not file://.`; console.error(e); } }
+async function start() { try { catalog=await json('viewer-runs.json'); $('run').replaceChildren(...catalog.runs.map(r=>new Option(r.label,r.id))); for(const id of ['run','width','scale','filter','scene-paths','scene-view','scene-matrix-style']) $(id).addEventListener('change', id==='run'?loadRun:render); await loadRun(); } catch(e) { $('subtitle').textContent=`Viewer failed: ${e.message}. Use HTTPS GitHub Pages, not file://.`; console.error(e); } }
 start();
