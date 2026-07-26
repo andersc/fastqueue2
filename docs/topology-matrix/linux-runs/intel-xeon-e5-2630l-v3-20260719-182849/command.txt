@@ -1,0 +1,1 @@
+cd /tmp/fq-topology-intel-xeon-e5-2630l-v3-20260719-182849/src && python3 tools/run_topology_matrix.py --max-cpus 0 --transfers 720720 --min-sample-ms 250 --rounds 12 --warmups 2 --3d-max-cpus 0 --out /tmp/fq-topology-intel-xeon-e5-2630l-v3-20260719-182849/artifacts
