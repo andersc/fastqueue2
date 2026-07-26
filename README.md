@@ -446,7 +446,7 @@ python3 tools/run_topology_matrix.py \
 
 ### Interactive topology explorer
 
-[Open interactive topology explorer](docs/topology-matrix/index.html). GitHub Pages serves this static D3 viewer over HTTPS. It loads run-level summary and metadata JSON first, then shows exact directed producer → consumer → mode medians with hover values, width selection, shared/local scale selection, and same-NUMA versus cross-NUMA filtering. It never groups CPU cells or collapses direction; linked PNGs remain immutable shareable fallbacks and results CSV remains raw per-round source.
+[Open interactive topology explorer](https://andersc.github.io/fastqueue2/topology-matrix/). GitHub Pages serves this static D3 viewer over HTTPS. It loads run-level summary and metadata JSON first, then shows exact directed producer → consumer → mode medians with hover values, width selection, shared/local scale selection, and same-NUMA versus cross-NUMA filtering. It never groups CPU cells or collapses direction; linked PNGs remain immutable shareable fallbacks and results CSV remains raw per-round source.
 
 ### Completed full-span Linux results
 
