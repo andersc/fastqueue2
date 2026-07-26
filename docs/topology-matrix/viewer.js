@@ -59,11 +59,10 @@ function drawScene(cpus, domains, data, color) {
 function drawLinksScene(cpus, domains, data, color) {
  const host=$('scene'); stopScene(); hideTip(); host.replaceChildren();
  if (!window.THREE || !webglAvailable()) { sceneFallback(host); return; }
- let renderer;
- try { renderer=new THREE.WebGLRenderer({antialias:true,alpha:true}); }
- catch (error) { console.warn('3D renderer unavailable', error); sceneFallback(host); return; }
- const W=Math.max(320,host.clientWidth), H=470, scene=new THREE.Scene(), camera=new THREE.PerspectiveCamera(45,W/H,.1,200);
- renderer.setPixelRatio(Math.min(devicePixelRatio,2)); renderer.setSize(W,H); host.append(renderer.domElement); camera.position.set(0,0,22);
+ const W=Math.max(320,host.clientWidth), H=470, renderer=createRenderer(W,H);
+ if (!renderer) { sceneFallback(host); return; }
+ const scene=new THREE.Scene(), camera=new THREE.PerspectiveCamera(45,W/H,.1,200);
+ host.append(renderer.domElement); camera.position.set(0,0,22);
  const group=new THREE.Group(); scene.add(group); const domIds=[...new Set(cpus.map(c=>domains.get(c)||'unknown'))], byDomain=new Map(domIds.map(id=>[id,cpus.filter(c=>(domains.get(c)||'unknown')===id)])), positions=new Map();
  [...byDomain.entries()].forEach(([id, list], di)=>{const orbit=di===0?5.3:8.2+di*1.5, offset=(di/domIds.length)*Math.PI*2; list.forEach((cpu,i)=>{const a=offset+i*Math.PI*2/list.length, z=(di-(domIds.length-1)/2)*1.9; positions.set(cpu,new THREE.Vector3(Math.cos(a)*orbit,Math.sin(a)*orbit,z));});});
  const nodeGeo=new THREE.SphereGeometry(.18,12,9); cpus.forEach(cpu=>{const mat=new THREE.MeshBasicMaterial({color:new THREE.Color('#9eeaff')}); const node=new THREE.Mesh(nodeGeo,mat); node.position.copy(positions.get(cpu)); group.add(node);});
@@ -80,22 +79,47 @@ function drawLinksScene(cpus, domains, data, color) {
 function drawMatrixScene(cpus, domains, data, color) {
  const host=$('scene'); stopScene(); hideTip(); host.replaceChildren();
  if (!window.THREE || !webglAvailable()) { sceneFallback(host); return; }
- let renderer; try { renderer=new THREE.WebGLRenderer({antialias:true,alpha:true}); } catch(error) { console.warn('3D renderer unavailable',error); sceneFallback(host); return; }
- const W=Math.max(320,host.clientWidth),H=470,scene=new THREE.Scene(),camera=new THREE.PerspectiveCamera(42,W/H,.1,300);
- renderer.setPixelRatio(Math.min(devicePixelRatio,2)); renderer.setSize(W,H); host.append(renderer.domElement);
+ const W=Math.max(320,host.clientWidth),H=470,renderer=createRenderer(W,H);
+ if (!renderer) { sceneFallback(host); return; }
+ const scene=new THREE.Scene(),camera=new THREE.PerspectiveCamera(42,W/H,.1,300);
+ host.append(renderer.domElement);
  const filter=$('filter').value, extent=d3.extent($('scale').value==='run'?rows:[...data.values()],r=>+r.median_mps), lo=extent[0], hi=extent[1], span=Math.max(hi-lo,Number.EPSILON), side=Math.max(cpus.length,2), pitch=14/side;
  const cells=[...data.values()].filter(r=>{const p=+r.producer_cpu,c=+r.consumer_cpu,same=domains.get(p)===domains.get(c); return p!==c && !((filter==='local'&&!same)||(filter==='remote'&&same));});
- const index=new Map(cpus.map((cpu,i)=>[cpu,i])), bars=new THREE.InstancedMesh(new THREE.BoxGeometry(pitch*.88,1,pitch*.88),new THREE.MeshBasicMaterial({vertexColors:true,transparent:true,opacity:.94}),cells.length), matrix=new THREE.Matrix4(), pos=new THREE.Vector3(), scale=new THREE.Vector3(), quat=new THREE.Quaternion(), tint=new THREE.Color();
- cells.forEach((r,i)=>{const norm=Math.max(.018,(+r.median_mps-lo)/span), height=.12+norm*7.1; pos.set((index.get(+r.consumer_cpu)-(side-1)/2)*pitch,height/2,(index.get(+r.producer_cpu)-(side-1)/2)*pitch); scale.set(1,height,1); matrix.compose(pos,quat,scale); bars.setMatrixAt(i,matrix); tint.set(color(+r.median_mps)); bars.setColorAt(i,tint);}); bars.instanceMatrix.needsUpdate=true; if(bars.instanceColor)bars.instanceColor.needsUpdate=true; scene.add(bars);
+ const index=new Map(cpus.map((cpu,i)=>[cpu,i])), bars=makeMatrixBars(cells, index, side, pitch, lo, span, color); scene.add(bars);
  const floor=new THREE.GridHelper(Math.max(14,side*pitch),Math.min(side,64),0x365477,0x1a3551); floor.position.y=0; scene.add(floor);
  const frame=new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(Math.max(14,side*pitch),7.3,Math.max(14,side*pitch))),new THREE.LineBasicMaterial({color:0x6fa6d6,transparent:true,opacity:.6})); frame.position.y=3.65; scene.add(frame);
  const labels=document.createElement('div'); labels.setAttribute('aria-hidden','true'); host.append(labels); let yaw=.65,pitchAngle=-.62,dist=22,drag,spin=false,reduced=matchMedia('(prefers-reduced-motion: reduce)').matches,hovered,animationFrame;
  function pose(){camera.position.set(dist*Math.cos(pitchAngle)*Math.sin(yaw),dist*Math.sin(pitchAngle)+3,dist*Math.cos(pitchAngle)*Math.cos(yaw));camera.lookAt(0,2,0);camera.updateMatrixWorld();}
  function frameLoop(){if(spin&&!reduced)yaw+=.0025;pose();renderer.render(scene,camera);animationFrame=requestAnimationFrame(frameLoop);} frameLoop();
  function pointerToNdc(e){const rect=renderer.domElement.getBoundingClientRect();return new THREE.Vector2(((e.clientX-rect.left)/rect.width)*2-1,-((e.clientY-rect.top)/rect.height)*2+1);}
- renderer.domElement.addEventListener('pointerdown',e=>{hideTip();drag=[e.clientX,e.clientY];renderer.domElement.setPointerCapture(e.pointerId);}); renderer.domElement.addEventListener('pointermove',e=>{if(drag){hideTip();yaw+=(e.clientX-drag[0])*.008;pitchAngle=Math.max(-1.35,Math.min(.05,pitchAngle+(e.clientY-drag[1])*.008));drag=[e.clientX,e.clientY];return;}const ray=new THREE.Raycaster();ray.setFromCamera(pointerToNdc(e),camera);const hit=ray.intersectObject(bars)[0];if(hit){hovered=cells[hit.instanceId];showTip(e,hovered,+hovered.producer_cpu,+hovered.consumer_cpu,domains);}else{hovered=null;hideTip();}}); renderer.domElement.addEventListener('pointerleave',hideTip); renderer.domElement.addEventListener('pointerup',()=>drag=null); renderer.domElement.addEventListener('pointercancel',()=>{drag=null;hideTip();}); renderer.domElement.addEventListener('click',()=>{if(hovered){selected={p:+hovered.producer_cpu,c:+hovered.consumer_cpu};drawComparison();}});renderer.domElement.addEventListener('wheel',e=>{e.preventDefault();dist=Math.max(10,Math.min(55,dist+e.deltaY*.012));},{passive:false});
+ renderer.domElement.addEventListener('pointerdown',e=>{hideTip();drag=[e.clientX,e.clientY];renderer.domElement.setPointerCapture(e.pointerId);}); renderer.domElement.addEventListener('pointermove',e=>{if(drag){hideTip();yaw+=(e.clientX-drag[0])*.008;pitchAngle=Math.max(-1.53,Math.min(1.53,pitchAngle+(e.clientY-drag[1])*.008));drag=[e.clientX,e.clientY];return;}const ray=new THREE.Raycaster();ray.setFromCamera(pointerToNdc(e),camera);const hit=ray.intersectObject(bars,true)[0];if(hit){hovered=hit.object.userData.cells[Math.floor(hit.faceIndex/12)];showTip(e,hovered,+hovered.producer_cpu,+hovered.consumer_cpu,domains);}else{hovered=null;hideTip();}}); renderer.domElement.addEventListener('pointerleave',hideTip); renderer.domElement.addEventListener('pointerup',()=>drag=null); renderer.domElement.addEventListener('pointercancel',()=>{drag=null;hideTip();}); renderer.domElement.addEventListener('click',()=>{if(hovered){selected={p:+hovered.producer_cpu,c:+hovered.consumer_cpu};drawComparison();}});renderer.domElement.addEventListener('wheel',e=>{e.preventDefault();dist=Math.max(10,Math.min(55,dist+e.deltaY*.012));},{passive:false});
  $('scene-home').onclick=()=>{yaw=.65;pitchAngle=-.62;dist=22;}; $('scene-spin').onclick=e=>{spin=!spin;e.currentTarget.setAttribute('aria-pressed',spin);}; $('scene-motion').onclick=e=>{reduced=!reduced;if(reduced)spin=false;e.currentTarget.setAttribute('aria-pressed',reduced);$('scene-spin').setAttribute('aria-pressed',spin);};
- stopScene=()=>{cancelAnimationFrame(animationFrame);hideTip();bars.geometry.dispose();bars.material.dispose();floor.geometry.dispose();floor.material.dispose();frame.geometry.dispose();frame.material.dispose();renderer.dispose();host.replaceChildren();stopScene=()=>{};};
+ stopScene=()=>{cancelAnimationFrame(animationFrame);hideTip();bars.traverse(bar=>{bar.geometry?.dispose();bar.material?.dispose();});floor.geometry.dispose();floor.material.dispose();frame.geometry.dispose();frame.material.dispose();renderer.dispose();host.replaceChildren();stopScene=()=>{};};
+}
+function createRenderer(width,height) {
+ try {
+   const renderer=new THREE.WebGLRenderer({antialias:true,alpha:true});
+   renderer.setPixelRatio(Math.min(devicePixelRatio,2)); renderer.setSize(width,height);
+   if ('outputColorSpace' in renderer && THREE.SRGBColorSpace) renderer.outputColorSpace=THREE.SRGBColorSpace;
+   else if ('outputEncoding' in renderer && THREE.sRGBEncoding) renderer.outputEncoding=THREE.sRGBEncoding;
+   const probeScene=new THREE.Scene(), probeCamera=new THREE.PerspectiveCamera(45,1,.1,10), probeGeometry=new THREE.BoxGeometry(.5,.5,.5), probeMaterial=new THREE.MeshBasicMaterial({color:0xffffff});
+   probeCamera.position.z=2; probeScene.add(new THREE.Mesh(probeGeometry,probeMaterial)); renderer.render(probeScene,probeCamera);
+   const error=renderer.getContext().getError(); probeGeometry.dispose(); probeMaterial.dispose();
+   if (error !== renderer.getContext().NO_ERROR) throw Error('WebGL render error '+error);
+   return renderer;
+ } catch (error) { console.warn('3D renderer unavailable',error); return null; }
+}
+function makeMatrixBars(cells,index,side,pitch,lo,span,color) {
+ const group=new THREE.Group(), chunkSize=7000, half=pitch*.44;
+ const corners=[[-1,0,-1],[1,0,-1],[1,0,1],[-1,0,1],[-1,1,-1],[1,1,-1],[1,1,1],[-1,1,1]];
+ const faces=[0,1,2,0,2,3,4,6,5,4,7,6,0,4,5,0,5,1,1,5,6,1,6,2,2,6,7,2,7,3,3,7,4,3,4,0];
+ for(let offset=0;offset<cells.length;offset+=chunkSize) {
+   const chunk=cells.slice(offset,offset+chunkSize), vertices=[], colors=[], indices=[];
+   chunk.forEach((r,i)=>{const norm=Math.max(.018,(+r.median_mps-lo)/span), h=.12+norm*7.1, x=(index.get(+r.consumer_cpu)-(side-1)/2)*pitch, z=(index.get(+r.producer_cpu)-(side-1)/2)*pitch, rgb=new THREE.Color(color(+r.median_mps)); corners.forEach(([dx,dy,dz])=>{vertices.push(x+dx*half,dy*h,z+dz*half);colors.push(rgb.r,rgb.g,rgb.b);}); faces.forEach(v=>indices.push(i*8+v));});
+   const geometry=new THREE.BufferGeometry(); geometry.setAttribute('position',new THREE.Float32BufferAttribute(vertices,3)); geometry.setAttribute('color',new THREE.Float32BufferAttribute(colors,3)); geometry.setIndex(indices); geometry.computeBoundingSphere();
+   const mesh=new THREE.Mesh(geometry,new THREE.MeshBasicMaterial({vertexColors:true,transparent:true,opacity:.94})); mesh.userData.cells=chunk; group.add(mesh);
+ }
+ return group;
 }
 function webglAvailable() { try { const canvas=document.createElement('canvas'); return !!(window.WebGLRenderingContext && (canvas.getContext('webgl2') || canvas.getContext('webgl'))); } catch (_) { return false; } }
 function sceneFallback(host) { host.innerHTML='<p class="scene-fallback"><b>3D view unavailable in this browser.</b> WebGL could not start. Exact interactive 2D heatmap above remains available.</p>'; }
