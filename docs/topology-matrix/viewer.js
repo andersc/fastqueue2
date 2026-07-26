@@ -2,6 +2,7 @@
 const rainbow = d3.interpolateRgbBasis(['#0000ff','#00bfff','#00ff00','#ffff00','#ff7f00','#ff0000']);
 const $ = id => document.getElementById(id);
 let catalog, run, rows, meta, selected;
+let stopScene = () => {};
 
 async function json(path) { const r = await fetch(path); if (!r.ok) throw Error(`${path}: ${r.status}`); return r.json(); }
 function rootFor(id) { return `linux-runs/${id}`; }
@@ -44,8 +45,12 @@ function drawHeatmap(cpus, domains, data, color) {
   axis(g.append('g'),false); axis(g.append('g'),true);
 }
 function drawScene(cpus, domains, data, color) {
- const host=$('scene'); host.replaceChildren(); if (!window.THREE) { host.innerHTML='<p class="scene-fallback">3D renderer unavailable. CDN request failed; exact accessible 2D heatmap remains available above.</p>'; return; }
- const W=Math.max(320,host.clientWidth), H=470, scene=new THREE.Scene(), camera=new THREE.PerspectiveCamera(45,W/H,.1,200), renderer=new THREE.WebGLRenderer({antialias:true,alpha:true});
+ const host=$('scene'); stopScene(); hideTip(); host.replaceChildren();
+ if (!window.THREE || !webglAvailable()) { sceneFallback(host); return; }
+ let renderer;
+ try { renderer=new THREE.WebGLRenderer({antialias:true,alpha:true}); }
+ catch (error) { console.warn('3D renderer unavailable', error); sceneFallback(host); return; }
+ const W=Math.max(320,host.clientWidth), H=470, scene=new THREE.Scene(), camera=new THREE.PerspectiveCamera(45,W/H,.1,200);
  renderer.setPixelRatio(Math.min(devicePixelRatio,2)); renderer.setSize(W,H); host.append(renderer.domElement); camera.position.set(0,0,22);
  const group=new THREE.Group(); scene.add(group); const domIds=[...new Set(cpus.map(c=>domains.get(c)||'unknown'))], byDomain=new Map(domIds.map(id=>[id,cpus.filter(c=>(domains.get(c)||'unknown')===id)])), positions=new Map();
  [...byDomain.entries()].forEach(([id, list], di)=>{const orbit=di===0?5.3:8.2+di*1.5, offset=(di/domIds.length)*Math.PI*2; list.forEach((cpu,i)=>{const a=offset+i*Math.PI*2/list.length, z=(di-(domIds.length-1)/2)*1.9; positions.set(cpu,new THREE.Vector3(Math.cos(a)*orbit,Math.sin(a)*orbit,z));});});
@@ -54,15 +59,20 @@ function drawScene(cpus, domains, data, color) {
  display.forEach(r=>{const p=+r.producer_cpu,c=+r.consumer_cpu,a=positions.get(p),b=positions.get(c); if(!a||!b)return; const mid=a.clone().add(b).multiplyScalar(.5); mid.z+=.65+Math.min(3,(+r.median_mps)/120); const curve=new THREE.QuadraticBezierCurve3(a,mid,b), pts=curve.getPoints(16), geo=new THREE.BufferGeometry().setFromPoints(pts), mat=new THREE.LineBasicMaterial({color:color(+r.median_mps),transparent:true,opacity:.58}); const line=new THREE.Line(geo,mat); line.userData={r,p,c,pts}; group.add(line); links.push(line); });
  const labels=document.createElement('div'); labels.setAttribute('aria-hidden','true'); host.append(labels); let yaw=.22,pitch=-.45,dist=22,drag,spin=false,reduced=matchMedia('(prefers-reduced-motion: reduce)').matches, hovered;
  function project(v){const q=v.clone().applyMatrix4(group.matrixWorld).project(camera); return {x:(q.x*.5+.5)*W,y:(-q.y*.5+.5)*H,visible:q.z<1};} function labelNodes(){labels.replaceChildren(); if(cpus.length>64)return; cpus.forEach(cpu=>{const q=project(positions.get(cpu)); if(!q.visible)return; const el=document.createElement('span');el.className='scene-label';el.style.left=`${q.x}px`;el.style.top=`${q.y}px`;el.textContent=`CPU ${cpu}`;labels.append(el);});}
- function pose(){camera.position.set(dist*Math.cos(pitch)*Math.sin(yaw),dist*Math.sin(pitch),dist*Math.cos(pitch)*Math.cos(yaw));camera.lookAt(0,0,0);camera.updateMatrixWorld();group.updateMatrixWorld();} function frame(){if(spin&&!reduced)yaw+=.0025;pose();renderer.render(scene,camera);labelNodes();requestAnimationFrame(frame);} frame();
- renderer.domElement.addEventListener('pointerdown',e=>{drag=[e.clientX,e.clientY];renderer.domElement.setPointerCapture(e.pointerId);}); renderer.domElement.addEventListener('pointermove',e=>{if(drag){yaw+=(e.clientX-drag[0])*.008;pitch=Math.max(-1.3,Math.min(1.3,pitch+(e.clientY-drag[1])*.008));drag=[e.clientX,e.clientY];return;} const mouse=new THREE.Vector2(e.offsetX/W*2-1,-e.offsetY/H*2+1), ray=new THREE.Raycaster();ray.setFromCamera(mouse,camera); const hit=ray.intersectObjects(links)[0]; if(hit){hovered=hit.object.userData;showTip(e,hovered.r,hovered.p,hovered.c,domains);}else {hovered=null;hideTip();}}); renderer.domElement.addEventListener('pointerup',()=>drag=null); renderer.domElement.addEventListener('click',()=>{if(hovered){selected={p:hovered.p,c:hovered.c};drawComparison();}}); renderer.domElement.addEventListener('wheel',e=>{e.preventDefault();dist=Math.max(9,Math.min(45,dist+e.deltaY*.012));},{passive:false});
+ function pose(){camera.position.set(dist*Math.cos(pitch)*Math.sin(yaw),dist*Math.sin(pitch),dist*Math.cos(pitch)*Math.cos(yaw));camera.lookAt(0,0,0);camera.updateMatrixWorld();group.updateMatrixWorld();} let animationFrame; function frame(){if(spin&&!reduced)yaw+=.0025;pose();renderer.render(scene,camera);labelNodes();animationFrame=requestAnimationFrame(frame);} frame();
+ function pointerToNdc(event) { const rect=renderer.domElement.getBoundingClientRect(); return new THREE.Vector2(((event.clientX-rect.left)/rect.width)*2-1,-((event.clientY-rect.top)/rect.height)*2+1); }
+ renderer.domElement.addEventListener('pointerdown',e=>{hideTip();drag=[e.clientX,e.clientY];renderer.domElement.setPointerCapture(e.pointerId);}); renderer.domElement.addEventListener('pointermove',e=>{if(drag){hideTip();yaw+=(e.clientX-drag[0])*.008;pitch=Math.max(-1.3,Math.min(1.3,pitch+(e.clientY-drag[1])*.008));drag=[e.clientX,e.clientY];return;} const mouse=pointerToNdc(e), ray=new THREE.Raycaster();ray.setFromCamera(mouse,camera); const hit=ray.intersectObjects(links)[0]; if(hit){hovered=hit.object.userData;showTip(e,hovered.r,hovered.p,hovered.c,domains);}else {hovered=null;hideTip();}}); renderer.domElement.addEventListener('pointerleave',()=>{hovered=null;hideTip();}); renderer.domElement.addEventListener('pointerup',()=>{drag=null;}); renderer.domElement.addEventListener('pointercancel',()=>{drag=null;hideTip();}); renderer.domElement.addEventListener('click',()=>{if(hovered){selected={p:hovered.p,c:hovered.c};drawComparison();}}); renderer.domElement.addEventListener('wheel',e=>{e.preventDefault();dist=Math.max(9,Math.min(45,dist+e.deltaY*.012));},{passive:false});
  $('scene-home').onclick=()=>{yaw=.22;pitch=-.45;dist=22;}; $('scene-spin').onclick=e=>{spin=!spin;e.currentTarget.setAttribute('aria-pressed',spin);}; $('scene-motion').onclick=e=>{reduced=!reduced;if(reduced)spin=false;e.currentTarget.setAttribute('aria-pressed',reduced);$('scene-spin').setAttribute('aria-pressed',spin);};
+ stopScene=()=>{cancelAnimationFrame(animationFrame); hideTip(); renderer.dispose(); nodeGeo.dispose(); links.forEach(line=>{line.geometry.dispose();line.material.dispose();}); host.replaceChildren(); stopScene=()=>{};};
 }
+function webglAvailable() { try { const canvas=document.createElement('canvas'); return !!(window.WebGLRenderingContext && (canvas.getContext('webgl2') || canvas.getContext('webgl'))); } catch (_) { return false; } }
+function sceneFallback(host) { host.innerHTML='<p class="scene-fallback"><b>3D view unavailable in this browser.</b> WebGL could not start. Exact interactive 2D heatmap above remains available.</p>'; }
 function showTip(event,r,p,c,domains) {
- d3.select('body').append('div').attr('class','tooltip').attr('id','tip').html(`<b>CPU ${p} → CPU ${c}</b><br>${(+r.median_mps).toFixed(3)} M items/s<br>${domains.get(p)===domains.get(c)?'same domain':'cross-domain / interconnect'}<br>${r.sample_count} timed samples`).style('left',`${event.clientX+12}px`).style('top',`${event.clientY+12}px`);
+ const tip=d3.select('body').selectAll('#tip').data([null]).join('div').attr('class','tooltip').attr('id','tip');
+ tip.html(`<b>CPU ${p} → CPU ${c}</b><br>${(+r.median_mps).toFixed(3)} M items/s<br>${domains.get(p)===domains.get(c)?'same domain':'cross-domain / interconnect'}<br>${r.sample_count} timed samples`); moveTip(event);
 }
 function moveTip(event) { d3.select('#tip').style('left',`${event.clientX+12}px`).style('top',`${event.clientY+12}px`); }
-function hideTip() { d3.select('#tip').remove(); }
+function hideTip() { d3.selectAll('#tip').remove(); }
 function drawComparison() {
  const holder=d3.select('#comparison').html(''); if(!selected){$('details').innerHTML='<dt>Path</dt><dd>Hover and click heatmap cell</dd>'; return;}
  const rs=rows.filter(r=>+r.producer_cpu===selected.p && +r.consumer_cpu===selected.c).sort((a,b)=>+a.width-+b.width), max=d3.max(rs,r=>+r.median_mps), W=300,H=190,m={top:12,right:8,bottom:35,left:43};
