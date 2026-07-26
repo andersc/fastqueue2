@@ -6,6 +6,7 @@
   <title>FastQueue topology explorer</title>
   <link rel="stylesheet" href="viewer.css">
   <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
   <script defer src="viewer.js"></script>
 </head>
 <body>
@@ -21,6 +22,11 @@
       <label>Show <select id="filter"><option value="all">all paths</option><option value="local">same NUMA domain</option><option value="remote">cross-NUMA / interconnect</option></select></label>
     </section>
     <section class="legend"><span>Slow</span><div id="gradient"></div><span>Fast</span><output id="scale-label"></output></section>
+    <section class="scene-section" aria-labelledby="scene-title">
+      <div class="scene-heading"><div><h2 id="scene-title">Topology flight deck <span class="optional">optional WebGL view</span></h2><p id="scene-note" class="note">Deterministic domain-ring layout from recorded CPU/domain membership. Not a physical motherboard map. Every visible arc is one selected, measured directed path.</p></div><div class="scene-controls"><label>3D paths <select id="scene-paths"><option value="selected">selected CPU path</option><option value="local">same NUMA domain</option><option value="remote">cross-NUMA / interconnect</option><option value="top">top 500 throughput paths</option></select></label><button id="scene-home" type="button">Home</button><button id="scene-spin" type="button" aria-pressed="false">Auto-rotate</button><button id="scene-motion" type="button" aria-pressed="false">Reduced motion</button></div></div>
+      <div id="scene" class="scene" role="img" aria-label="Optional three-dimensional directed topology view; use 2D heatmap for authoritative accessible data"></div>
+      <p class="note">Drag to orbit. Scroll or pinch to zoom. Hover an arc for exact selected-mode median; click it to select same producer → consumer path in comparison chart. Display filter reduces drawn links only—values remain unaggregated.</p>
+    </section>
     <section class="layout">
       <article>
         <h2 id="heatmap-title">Producer → consumer median throughput</h2>
