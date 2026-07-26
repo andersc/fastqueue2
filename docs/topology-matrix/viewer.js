@@ -19,19 +19,27 @@ async function loadRun() {
   run = catalog.runs.find(x => x.id === $('run').value);
   [rows, meta] = await Promise.all([json(`${rootFor(run.id)}/summary.json`), json(`${rootFor(run.id)}/metadata.json`)]);
   const widths = [...new Set(rows.map(r => +r.width))].sort((a,b)=>a-b);
-  $('width').replaceChildren(...widths.map(w => new Option(labelWidth(w), w)));
+  $('width').replaceChildren(...widths.map(w => new Option(labelWidth(w), w)), new Option('all widths (3D layers)', 'all'));
+  updateWidthControl();
   $('subtitle').textContent = `${run.label} · ${rows.length.toLocaleString()} exact directed path×mode medians · ${meta.placement_confidence || 'placement details in metadata'}`;
   setLinks(); selected = null; render();
 }
 function valuesForWidth(width) { return rows.filter(r => +r.width === +width); }
+function allWidthsSelected() { return $('width').value === 'all'; }
+function updateWidthControl() {
+  const matrix = $('scene-view').value === 'matrix', all = $('width').querySelector('option[value=all]');
+  all.disabled = !matrix;
+  if (!matrix && allWidthsSelected()) $('width').value = String(Math.min(...rows.map(r => +r.width)));
+}
 function render() {
-  const width = +$('width').value, modeRows = valuesForWidth(width), cpus = cpuOrder(), domains = domainMap();
-  const data = new Map(modeRows.map(r => [`${r.producer_cpu}/${r.consumer_cpu}`, r]));
-  const all = $('scale').value === 'run' ? rows : modeRows;
-  const extent = d3.extent(all, r => +r.median_mps), color = d3.scaleSequential(rainbow).domain(extent);
-  $('scale-label').textContent = `${extent[0].toFixed(2)}–${extent[1].toFixed(2)} M items/s (${ $('scale').value === 'run' ? 'run' : 'mode'} scale)`;
-  $('heatmap-title').textContent = `${labelWidth(width)}: producer → consumer median throughput`;
-  drawHeatmap(cpus, domains, data, color); drawScene(cpus, domains, data, color); drawComparison();
+  updateWidthControl();
+  const allWidths = allWidthsSelected(), width = allWidths ? null : +$('width').value, modeRows = allWidths ? rows : valuesForWidth(width), cpus = cpuOrder(), domains = domainMap();
+  const data = new Map((allWidths ? [] : modeRows).map(r => [`${r.producer_cpu}/${r.consumer_cpu}`, r]));
+  const scaleRows = $('scale').value === 'run' || allWidths ? rows : modeRows;
+  const extent = d3.extent(scaleRows, r => +r.median_mps), color = d3.scaleSequential(rainbow).domain(extent);
+  $('scale-label').textContent = `${extent[0].toFixed(2)}–${extent[1].toFixed(2)} M items/s (${ $('scale').value === 'run' || allWidths ? 'run' : 'mode'} scale)`;
+  $('heatmap-title').textContent = allWidths ? 'All widths: 3D layers selected (choose one mode for 2D heatmap)' : `${labelWidth(width)}: producer → consumer median throughput`;
+  drawHeatmap(cpus, domains, data, color); drawScene(cpus, domains, data, color, allWidths); drawComparison();
 }
 function drawHeatmap(cpus, domains, data, color) {
   const holder = d3.select('#heatmap').html(''), max=760, cell=Math.max(10, Math.floor(max / cpus.length)), margin={top:38,right:12,bottom:48,left:48}, side=cell*cpus.length;
@@ -44,18 +52,19 @@ function drawHeatmap(cpus, domains, data, color) {
   const axis=(selection, vertical)=>selection.selectAll('text').data(cpus).join('text').attr('font-size',Math.min(11,cell*.75)).attr(vertical?'y':'x',(d,i)=>i*cell+cell/2).attr(vertical?'x':'y',vertical?-6:side+13).attr('text-anchor',vertical?'end':'middle').text(d=>d);
   axis(g.append('g'),false); axis(g.append('g'),true);
 }
-function drawScene(cpus, domains, data, color) {
-  const matrix = $('scene-view').value === 'matrix', points = $('scene-matrix-style').value === 'points';
+function drawScene(cpus, domains, data, color, allWidths) {
+  const matrix = $('scene-view').value === 'matrix', points = allWidths || $('scene-matrix-style').value === 'points';
   $('scene-paths-label').hidden = matrix;
   $('scene-matrix-style-label').hidden = !matrix;
+  $('scene-matrix-style').disabled = allWidths;
   $('scene-title').childNodes[0].textContent = matrix ? '3D throughput heatmap ' : '3D topology explorer ';
   $('scene-note').textContent = matrix
-    ? `Scientific 3D matrix: consumer CPU is X, producer CPU is Z. Exact selected-mode median controls color${points ? '; points stay on plane' : ' and bar height'}. This is not a smoothed surface.`
+    ? (allWidths ? 'Scientific 3D matrix layers: consumer CPU is X, producer CPU is Z, and vertical layers are scalar then fixed widths 1–8. Every flat point is one exact measured cell; missing cells/layers stay empty.' : `Scientific 3D matrix: consumer CPU is X, producer CPU is Z. Exact selected-mode median controls color${points ? '; points stay on plane' : ' and bar height'}. This is not a smoothed surface.`)
     : 'Topology links use deterministic domain rings, not physical motherboard geometry. Every visible arc is one selected, measured directed path.';
   $('scene-help').textContent = matrix
-    ? `Drag to orbit. Scroll or pinch to zoom. Hover a ${points ? 'point' : 'bar'} for its exact directed-path median; click to select it. Diagonal and missing measurements are absent. Display filter hides cells only—viewer never aggregates or invents values.`
+    ? `Drag to orbit. Scroll or pinch to zoom. Hover a ${allWidths ? 'layer point' : points ? 'point' : 'bar'} for its exact directed-path median and width; click to select it. Diagonal and missing measurements are absent. Display filter hides cells only—viewer never aggregates or invents values.`
     : 'Drag to orbit. Scroll or pinch to zoom. Hover an arc for exact selected-mode median; click it to select same producer → consumer path. Display filter reduces drawn links only—values remain unaggregated.';
-  if (matrix) drawMatrixScene(cpus, domains, data, color, points); else drawLinksScene(cpus, domains, data, color);
+  if (matrix) drawMatrixScene(cpus, domains, data, color, points, allWidths); else drawLinksScene(cpus, domains, data, color);
 }
 function drawLinksScene(cpus, domains, data, color) {
  const host=$('scene'); stopScene(); hideTip(); host.replaceChildren();
@@ -77,7 +86,7 @@ function drawLinksScene(cpus, domains, data, color) {
  $('scene-home').onclick=()=>{yaw=.22;pitch=-.45;dist=22;}; $('scene-spin').onclick=e=>{spin=!spin;e.currentTarget.setAttribute('aria-pressed',spin);}; $('scene-motion').onclick=e=>{reduced=!reduced;if(reduced)spin=false;e.currentTarget.setAttribute('aria-pressed',reduced);$('scene-spin').setAttribute('aria-pressed',spin);};
  stopScene=()=>{cancelAnimationFrame(animationFrame); hideTip(); renderer.dispose(); nodeGeo.dispose(); links.forEach(line=>{line.geometry.dispose();line.material.dispose();}); host.replaceChildren(); stopScene=()=>{};};
 }
-function drawMatrixScene(cpus, domains, data, color, points) {
+function drawMatrixScene(cpus, domains, data, color, points, allWidths) {
  const host=$('scene'); stopScene(); hideTip(); host.replaceChildren();
  if (!window.THREE || !webglAvailable()) { sceneFallback(host); return; }
  const W=Math.max(320,host.clientWidth),H=470,renderer=createRenderer(W,H);
@@ -85,12 +94,14 @@ function drawMatrixScene(cpus, domains, data, color, points) {
  const scene=new THREE.Scene(),camera=new THREE.PerspectiveCamera(42,W/H,.1,300);
  host.append(renderer.domElement);
  const filter=$('filter').value, extent=d3.extent($('scale').value==='run'?rows:[...data.values()],r=>+r.median_mps), lo=extent[0], hi=extent[1], span=Math.max(hi-lo,Number.EPSILON), side=Math.max(cpus.length,2), pitch=14/side;
- const cells=[...data.values()].filter(r=>{const p=+r.producer_cpu,c=+r.consumer_cpu,same=domains.get(p)===domains.get(c); return p!==c && !((filter==='local'&&!same)||(filter==='remote'&&same));});
- const index=new Map(cpus.map((cpu,i)=>[cpu,i])), marks=points ? makeMatrixPoints(cells, index, side, pitch, color) : makeMatrixBars(cells, index, side, pitch, lo, span, color); scene.add(marks);
+ const cells=(allWidths ? rows : [...data.values()]).filter(r=>{const p=+r.producer_cpu,c=+r.consumer_cpu,same=domains.get(p)===domains.get(c); return p!==c && !((filter==='local'&&!same)||(filter==='remote'&&same));});
+ const layers=[...new Set(cells.map(r=>+r.width))].sort((a,b)=>a-b), layerHeight=allWidths ? Math.max(4, layers.length*.72) : 0;
+ const index=new Map(cpus.map((cpu,i)=>[cpu,i])), marks=points ? makeMatrixPoints(cells, index, side, pitch, color, allWidths ? layers : null) : makeMatrixBars(cells, index, side, pitch, lo, span, color); scene.add(marks);
  const floor=new THREE.GridHelper(Math.max(14,side*pitch),Math.min(side,64),0x365477,0x1a3551); floor.position.y=0; scene.add(floor);
- const frame=new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(Math.max(14,side*pitch),7.3,Math.max(14,side*pitch))),new THREE.LineBasicMaterial({color:0x6fa6d6,transparent:true,opacity:.6})); frame.position.y=3.65; scene.add(frame);
+ const frameHeight=allWidths ? layerHeight : 7.3, frame=new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(Math.max(14,side*pitch),frameHeight,Math.max(14,side*pitch))),new THREE.LineBasicMaterial({color:0x6fa6d6,transparent:true,opacity:.6})); frame.position.y=frameHeight/2; scene.add(frame);
  const labels=document.createElement('div'); labels.setAttribute('aria-hidden','true'); host.append(labels); let yaw=.65,pitchAngle=-.62,dist=22,drag,spin=false,reduced=matchMedia('(prefers-reduced-motion: reduce)').matches,hovered,animationFrame;
- function pose(){camera.position.set(dist*Math.cos(pitchAngle)*Math.sin(yaw),dist*Math.sin(pitchAngle)+3,dist*Math.cos(pitchAngle)*Math.cos(yaw));camera.lookAt(0,2,0);camera.updateMatrixWorld();}
+ const focusY=allWidths ? layerHeight/2 : 2;
+ function pose(){camera.position.set(dist*Math.cos(pitchAngle)*Math.sin(yaw),dist*Math.sin(pitchAngle)+focusY+1,dist*Math.cos(pitchAngle)*Math.cos(yaw));camera.lookAt(0,focusY,0);camera.updateMatrixWorld();}
  function frameLoop(){if(spin&&!reduced)yaw+=.0025;pose();renderer.render(scene,camera);animationFrame=requestAnimationFrame(frameLoop);} frameLoop();
  function pointerToNdc(e){const rect=renderer.domElement.getBoundingClientRect();return new THREE.Vector2(((e.clientX-rect.left)/rect.width)*2-1,-((e.clientY-rect.top)/rect.height)*2+1);}
  renderer.domElement.addEventListener('pointerdown',e=>{hideTip();drag=[e.clientX,e.clientY];renderer.domElement.setPointerCapture(e.pointerId);}); renderer.domElement.addEventListener('pointermove',e=>{if(drag){hideTip();yaw+=(e.clientX-drag[0])*.008;pitchAngle=Math.max(-1.53,Math.min(1.53,pitchAngle+(e.clientY-drag[1])*.008));drag=[e.clientX,e.clientY];return;}const ray=new THREE.Raycaster();ray.setFromCamera(pointerToNdc(e),camera);const hit=ray.intersectObject(marks,true)[0];if(hit){hovered=hit.object.userData.cells[Math.floor(hit.faceIndex/12)];showTip(e,hovered,+hovered.producer_cpu,+hovered.consumer_cpu,domains);}else{hovered=null;hideTip();}}); renderer.domElement.addEventListener('pointerleave',hideTip); renderer.domElement.addEventListener('pointerup',()=>drag=null); renderer.domElement.addEventListener('pointercancel',()=>{drag=null;hideTip();}); renderer.domElement.addEventListener('click',()=>{if(hovered){selected={p:+hovered.producer_cpu,c:+hovered.consumer_cpu};drawComparison();}});renderer.domElement.addEventListener('wheel',e=>{e.preventDefault();dist=Math.max(10,Math.min(55,dist+e.deltaY*.012));},{passive:false});
@@ -110,13 +121,13 @@ function createRenderer(width,height) {
    return renderer;
  } catch (error) { console.warn('3D renderer unavailable',error); return null; }
 }
-function makeMatrixPoints(cells,index,side,pitch,color) {
- const group=new THREE.Group(), chunkSize=7000, half=Math.max(pitch*.28,.018), height=Math.max(pitch*.04,.012);
+function makeMatrixPoints(cells,index,side,pitch,color,layers=null) {
+ const group=new THREE.Group(), chunkSize=7000, half=Math.max(pitch*.28,.018), height=Math.max(pitch*.04,.012), layerIndex=new Map((layers || []).map((w,i)=>[w,i])), layerStep=.72;
  const corners=[[-1,0,-1],[1,0,-1],[1,0,1],[-1,0,1],[-1,1,-1],[1,1,-1],[1,1,1],[-1,1,1]];
  const faces=[0,1,2,0,2,3,4,6,5,4,7,6,0,4,5,0,5,1,1,5,6,1,6,2,2,6,7,2,7,3,3,7,4,3,4,0];
  for(let offset=0;offset<cells.length;offset+=chunkSize) {
    const chunk=cells.slice(offset,offset+chunkSize), vertices=[], colors=[], indices=[];
-   chunk.forEach((r,i)=>{const x=(index.get(+r.consumer_cpu)-(side-1)/2)*pitch, z=(index.get(+r.producer_cpu)-(side-1)/2)*pitch, rgb=new THREE.Color(color(+r.median_mps)); corners.forEach(([dx,dy,dz])=>{vertices.push(x+dx*half,dy*height,z+dz*half);colors.push(rgb.r,rgb.g,rgb.b);}); faces.forEach(v=>indices.push(i*8+v));});
+   chunk.forEach((r,i)=>{const x=(index.get(+r.consumer_cpu)-(side-1)/2)*pitch, z=(index.get(+r.producer_cpu)-(side-1)/2)*pitch, rgb=new THREE.Color(color(+r.median_mps)); corners.forEach(([dx,dy,dz])=>{vertices.push(x+dx*half,(layerIndex.size ? layerIndex.get(+r.width)*layerStep : 0)+dy*height,z+dz*half);colors.push(rgb.r,rgb.g,rgb.b);}); faces.forEach(v=>indices.push(i*8+v));});
    const geometry=new THREE.BufferGeometry(); geometry.setAttribute('position',new THREE.Float32BufferAttribute(vertices,3)); geometry.setAttribute('color',new THREE.Float32BufferAttribute(colors,3)); geometry.setIndex(indices); geometry.computeBoundingSphere();
    const mesh=new THREE.Mesh(geometry,new THREE.MeshBasicMaterial({vertexColors:true,transparent:true,opacity:1,side:THREE.DoubleSide})); mesh.userData.cells=chunk; group.add(mesh);
  }
@@ -138,7 +149,7 @@ function webglAvailable() { try { const canvas=document.createElement('canvas');
 function sceneFallback(host) { host.innerHTML='<p class="scene-fallback"><b>3D view unavailable in this browser.</b> WebGL could not start. Exact interactive 2D heatmap above remains available.</p>'; }
 function showTip(event,r,p,c,domains) {
  const tip=d3.select('body').selectAll('#tip').data([null]).join('div').attr('class','tooltip').attr('id','tip');
- tip.html(`<b>CPU ${p} → CPU ${c}</b><br>${(+r.median_mps).toFixed(3)} M items/s<br>${domains.get(p)===domains.get(c)?'same domain':'cross-domain / interconnect'}<br>${r.sample_count} timed samples`); moveTip(event);
+ tip.html(`<b>CPU ${p} → CPU ${c}</b><br>${labelWidth(+r.width)}<br>${(+r.median_mps).toFixed(3)} M items/s<br>${domains.get(p)===domains.get(c)?'same domain':'cross-domain / interconnect'}<br>${r.sample_count} timed samples`); moveTip(event);
 }
 function moveTip(event) { d3.select('#tip').style('left',`${event.clientX+12}px`).style('top',`${event.clientY+12}px`); }
 function hideTip() { d3.selectAll('#tip').remove(); }
@@ -147,7 +158,7 @@ function drawComparison() {
  const rs=rows.filter(r=>+r.producer_cpu===selected.p && +r.consumer_cpu===selected.c).sort((a,b)=>+a.width-+b.width), max=d3.max(rs,r=>+r.median_mps), W=300,H=190,m={top:12,right:8,bottom:35,left:43};
  const x=d3.scaleBand().domain(rs.map(r=>+r.width)).range([m.left,W-m.right]).padding(.14), y=d3.scaleLinear().domain([0,max]).nice().range([H-m.bottom,m.top]); const svg=holder.append('svg').attr('width',W).attr('height',H);
  svg.append('g').selectAll('rect').data(rs).join('rect').attr('x',r=>x(+r.width)).attr('y',r=>y(+r.median_mps)).attr('width',x.bandwidth()).attr('height',r=>y(0)-y(+r.median_mps)).attr('fill',r=>rainbow((+r.median_mps)/max)); svg.append('g').attr('transform',`translate(0,${H-m.bottom})`).call(d3.axisBottom(x).tickFormat(labelWidth)); svg.append('g').attr('transform',`translate(${m.left},0)`).call(d3.axisLeft(y).ticks(4));
- $('details').innerHTML=`<dt>Path</dt><dd>CPU ${selected.p} → CPU ${selected.c}</dd><dt>Domain</dt><dd>${domainMap().get(selected.p)===domainMap().get(selected.c)?'same NUMA domain':'cross-NUMA / interconnect'}</dd><dt>Value</dt><dd>${(+rs.find(r=>+r.width===+$('width').value)?.median_mps).toFixed(3)} M items/s</dd>`;
+ $('details').innerHTML=`<dt>Path</dt><dd>CPU ${selected.p} → CPU ${selected.c}</dd><dt>Domain</dt><dd>${domainMap().get(selected.p)===domainMap().get(selected.c)?'same NUMA domain':'cross-NUMA / interconnect'}</dd><dt>Value</dt><dd>${allWidthsSelected() ? 'See selected 3D layer point' : (+rs.find(r=>+r.width===+$('width').value)?.median_mps).toFixed(3)+' M items/s'}</dd>`;
 }
 async function start() { try { catalog=await json('viewer-runs.json'); $('run').replaceChildren(...catalog.runs.map(r=>new Option(r.label,r.id))); for(const id of ['run','width','scale','filter','scene-paths','scene-view','scene-matrix-style']) $(id).addEventListener('change', id==='run'?loadRun:render); await loadRun(); } catch(e) { $('subtitle').textContent=`Viewer failed: ${e.message}. Use HTTPS GitHub Pages, not file://.`; console.error(e); } }
 start();
