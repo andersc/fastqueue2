@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>FastQueue topology explorer</title>
+  <link rel="stylesheet" href="viewer.css">
+  <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+  <script defer src="viewer.js"></script>
+</head>
+<body>
+  <header>
+    <h1>FastQueue topology explorer</h1>
+    <p id="subtitle">Loading measured directed-path medians…</p>
+  </header>
+  <main>
+    <section class="controls" aria-label="Topology controls">
+      <label>Run <select id="run"></select></label>
+      <label>Mode <select id="width"></select></label>
+      <label>Scale <select id="scale"><option value="mode">selected mode</option><option value="run">all modes in run</option></select></label>
+      <label>Show <select id="filter"><option value="all">all paths</option><option value="local">same NUMA domain</option><option value="remote">cross-NUMA / interconnect</option></select></label>
+    </section>
+    <section class="legend"><span>Slow</span><div id="gradient"></div><span>Fast</span><output id="scale-label"></output></section>
+    <section class="layout">
+      <article>
+        <h2 id="heatmap-title">Producer → consumer median throughput</h2>
+        <div id="heatmap" class="chart" role="img" aria-label="Directed producer to consumer throughput heatmap"></div>
+        <p class="note">Rows: producer CPU. Columns: consumer CPU. Diagonal is excluded. Dashed lines mark recorded NUMA-domain transitions; off-diagonal domain blocks use interconnect paths. Hover any measured cell for exact value.</p>
+      </article>
+      <aside>
+        <h2>Selected cell</h2>
+        <dl id="details"><dt>Path</dt><dd>Hover heatmap cell</dd></dl>
+        <h2>Mode comparison</h2>
+        <div id="comparison" class="chart" role="img" aria-label="Selected path throughput by mode"></div>
+      </aside>
+    </section>
+    <section>
+      <h2>Explorer contract</h2>
+      <p>Each heatmap cell is exactly one recorded producer → consumer → mode median from <code>summary.json</code>. Viewer does not group CPUs, infer cells, or average directions. Raw per-round samples remain available in each run’s <code>results.csv</code>.</p>
+      <p><a id="raw-link" href="#">Open raw results CSV</a> · <a id="summary-link" href="#">Open median summary JSON</a> · <a id="metadata-link" href="#">Open run metadata</a></p>
+    </section>
+  </main>
+</body>
+</html>

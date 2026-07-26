@@ -63,330 +63,13 @@ and uses data/control layouts selected per architecture and measured workload:
 If the tail catches the head there's nothing to pop; if the head catches the tail
 the buffer is full and push waits. Same contract as before, very different cost.
 
-## The need for speed
-
-A word on measuring first, because it bit me hard: the original benchmark ran
-each queue back-to-back in a fixed order, and on a laptop that means the queue
-that runs **first** gets the cold/turbo advantage and looks fastest. It also does
-`new`/`delete` per message, and that allocator cost (cross-thread free is
-expensive) dominates the loop and hides the queue entirely. So the numbers below
-come from a rewritten benchmark that **rotates the order every round**, reports
-the **median**, and runs two passes: a *heap* pass (new/delete per message, the
-classic FastQueue benchmark, allocator-bound) and a *pooled* pass (pre-allocated
-objects — this is what actually measures the queue).
-
-Pooled pass, fixed transaction count, higher is better, median of 12 rotated rounds.
-Absolute numbers differ by machine, compiler, clocks, and scheduler; compare queues within
-one row.
-
-| Machine | FastQueue | Deaod | Dro | David V5 |
-| --- | ---: | ---: | ---: | ---: |
-| Apple M5, macOS arm64 | **396.473M** | 165.428M | 77.379M | 154.271M |
-| ARM Cortex-X925 + Cortex-A725, Linux arm64, X925 CPUs 5/6 | 83.678M | 86.346M | **87.382M** | 86.551M |
-| AMD EPYC 7702, Zen2 dual socket, CPUs 1/3 | **123.935M** | 90.443M | 107.959M | 102.075M |
-| AMD EPYC 7702P, Zen2, CPUs 1/3 | **118.629M** | 75.078M | 90.129M | 79.699M |
-| Intel Xeon E5-2630L v3, Haswell, CPUs 1/3 | **117.951M** | 28.725M | 31.869M | 27.067M |
-
-### Measurement method
-
-Every table row uses joined workers, atomic start gate, exact transfer count,
-sequence validation, four-way order rotation, pooled pointers, and a 12-round
-median. Compare queues only within one row.
-
-Apple M5 arm64 row uses 5,000,000 fixed transfers. FastQueue is row winner at
-396.473M/s; Deaod is 165.428M/s, David V5 is 154.271M/s, and Dro is 77.379M/s.
-`FQ_ARM_RING_INLINE=1` uses queue-owned contiguous storage with peer-index caches
-and release/acquire publication. The 100,000,000-transfer confirmation measured
-FastQueue 405.951M/s versus Deaod 176.884M/s, David V5 155.166M/s, and Dro
-72.701M/s. macOS affinity is a scheduler hint, not hard physical-core pinning;
-P-core/E-core placement adds variance.
-
-Cortex-X925 Linux row was re-run with 100,000,000 fixed transfers, physical X925
-CPUs 5 and 6, performance governor, `chrt -f 90`, and
-`g++ -O3 -DNDEBUG -march=native`. Host has two 5-core Cortex-X925 clusters
-(CPUs 5–9 and 15–19) plus Cortex-A725 cores (CPUs 0–4 and 10–14); CPUs 5/6 are
-distinct X925 cores in one cluster at 3.9 GHz. Dro wins this workload at
-87.382M/s; David V5, Deaod, and FastQueue measure 86.551M/s, 86.346M/s, and
-83.678M/s. Results are median of 12 rotated rounds from this current run.
-
-Linux x86 rows use pooled pointers, physical-core pinning, performance governor,
-`chrt -f 90`, `g++ -O3 -DNDEBUG -march=native`, exact sequence validation, and
-fixed transfer counts. FastQueue is row winner on all three listed x86 hosts:
-+14.8% versus Dro on dual-socket Zen2, +31.6% on single-socket Zen2, and +270.1%
-on this Haswell. Linux controls improve repeatability; they do not make Linux and
-macOS absolute throughput directly comparable.
-
-David V5 comes from [David Álvarez Rosa's ring-buffer analysis](https://david.alvarezrosa.com/posts/optimizing-a-lock-free-ring-buffer/)
-Results identify row winners only for stated machine/workload conditions, not
-universal #1 across every CPU, compiler, capacity, or latency workload.
-
-Heap pass is allocator-bound. Use pooled objects, rotated order, joined worker
-threads, fixed-work sequence validation, and median distributions for queue
-comparisons.
-### Per-architecture tuning
-
-`fast_queue_arm64.h` selects an inline contiguous ring by default
-(`FQ_ARM_RING_INLINE=1`), which is measured fastest for Apple M5 pooled
-throughput. Define `FQ_ARM_RING_INLINE=0` to restore separately allocated ARM
-storage for experiments. `fast_queue_x86_64.h` selects an x86 profile from
-GCC/Clang `-march` macros:
-
-* `-march=znver2`: `FQ_WRAPPED_INDICES=1`, `FQ_CONSUMER_CUSHION=6`.
-* Other x86 targets: `FQ_WRAPPED_INDICES=0`, `FQ_CONSUMER_CUSHION=0`.
-* Define either macro before including header to override profile.
-* `FQ_OCCUPANCY_INSTRUMENT=1` records empty-refresh occupancy and perturbs
-  throughput; diagnosis only.
-
-Fixed-work reproduction:
-
-```bash
-g++ -O3 -DNDEBUG -std=c++20 -march=native -DPOOLED_ONLY=1 \
-  -DTRANSFER_COUNT=100000000 -DROUNDS=12 -DCONSUMER_CPU=1 -DPRODUCER_CPU=3 \
-  -I. -Ideaod_spsc -Idro main.cpp -o bench
-sudo cpupower frequency-set -g performance
-sudo chrt -f 90 ./bench
-```
-
-## Topology matrix: producer → consumer communication
-
-`FastQueue` performance depends on producer/consumer placement: physical core,
-SMT sibling, cache cluster, socket/NUMA boundary, CPU governor, and queue
-occupancy all affect cache-line handoff. Do not treat one two-core benchmark as
-a universal CPU ranking.
-
-`tools/run_topology_matrix.py` builds an opt-in benchmark and produces an
-ordered producer→consumer matrix for every logical CPU available to current
-process. It measures `Scalar API` separately, then every target-supported
-fixed width (`1..8` on x86_64/common Linux arm64; `1..16` with Apple 128-byte
-ARM batch staging). Diagonal cells are excluded: a queue needs distinct
-producer and consumer threads. CSV rows also record socket/core/SMT data where
-Linux exposes it, hard-pin success, raw rounds, and median summaries.
-
-Published topology graphics are high-resolution PNG files. They use local
-reference-inspired rainbow scale: **blue = slow throughput; red = fast
-throughput**. Each image has own labeled linear M-items/s scale. Matrix rows
-are producers; columns consumers. Hatched diagonal means excluded self-pair;
-light gray means missing measurement.
-
-3D view is rasterized static **exact-cell voxel heat cube**, not exploded plane chart:
-X = producer CPU, Y = consumer CPU, Z = scalar/fixed batch mode, color =
-throughput. Z layers always print in numeric order: `scalar`, `width 1`,
-`width 2`, … through highest supported width; unmeasured layers remain visibly
-empty. Each semi-transparent voxel is one measured directed-pair median:
-no CPU groups, no bin statistics, no aggregate medians. Transparency exposes
-cells behind front faces; subtle cell edges preserve depth. CPU tick labels thin
-only labels, never data. Exact CPU order and every rendered cell live beside
-cube in `topology-voxel-cube-coverage.json`. PNG is static; exact directed-path
-values remain in linked CSV and `summary.json`.
-
-Quick calibrated local probe—four allowed logical CPUs, per-cell work scaled from
-a calibration pass to target at least 100 ms:
-
-```bash
-python3 tools/run_topology_matrix.py \
-  --max-cpus 4 --transfers 720720 --min-sample-ms 100 \
-  --rounds 5 --warmups 1
-```
-
-### Completed full-span Linux results
-
-| CPU model | Scope | Modes | Status | Artifacts |
-|---|---:|---|---|---|
-| Intel Xeon E5-2630L v3 | all 32 allowed logical CPUs; `32 × 31 = 992` ordered paths | Scalar + fixed 1–8 | **isolated 12-round campaign complete; 107,136 rows; hard-pinned; 250 ms minimum sample; `performance` + SCHED_RR** | [scalar heatmap](docs/topology-matrix/linux-runs/intel-xeon-e5-2630l-v3-20260719-182849/scalar-heatmap.png) · [fixed-8 heatmap](docs/topology-matrix/linux-runs/intel-xeon-e5-2630l-v3-20260719-182849/fixed-8-heatmap.png) · [3D topology heat cube](docs/topology-matrix/linux-runs/intel-xeon-e5-2630l-v3-20260719-182849/topology-voxel-cube.png) · [cube cell coverage](docs/topology-matrix/linux-runs/intel-xeon-e5-2630l-v3-20260719-182849/topology-voxel-cube-coverage.json) · [raw CSV](docs/topology-matrix/linux-runs/intel-xeon-e5-2630l-v3-20260719-182849/results.csv) · [median summary](docs/topology-matrix/linux-runs/intel-xeon-e5-2630l-v3-20260719-182849/summary.json) · [metadata](docs/topology-matrix/linux-runs/intel-xeon-e5-2630l-v3-20260719-182849/metadata.json) · [width chart](docs/topology-matrix/linux-runs/intel-xeon-e5-2630l-v3-20260719-182849/width-depth.png) |
-| Intel Xeon E5-2630L v3 | all 32 allowed logical CPUs; `32 × 31 = 992` ordered paths | Scalar + fixed 1–8 | prior five-round archive; 44,640 rows; hard-pinned | [scalar heatmap](docs/topology-matrix/linux-runs/intel-xeon-e5-2630l-v3-20260718-194430/scalar-heatmap.png) · [fixed-8 heatmap](docs/topology-matrix/linux-runs/intel-xeon-e5-2630l-v3-20260718-194430/fixed-8-heatmap.png) · [3D topology heat cube](docs/topology-matrix/linux-runs/intel-xeon-e5-2630l-v3-20260718-194430/topology-voxel-cube.png) · [cube cell coverage](docs/topology-matrix/linux-runs/intel-xeon-e5-2630l-v3-20260718-194430/topology-voxel-cube-coverage.json) · [raw CSV](docs/topology-matrix/linux-runs/intel-xeon-e5-2630l-v3-20260718-194430/results.csv) · [median summary](docs/topology-matrix/linux-runs/intel-xeon-e5-2630l-v3-20260718-194430/summary.json) · [metadata](docs/topology-matrix/linux-runs/intel-xeon-e5-2630l-v3-20260718-194430/metadata.json) · [width chart](docs/topology-matrix/linux-runs/intel-xeon-e5-2630l-v3-20260718-194430/width-depth.png) |
-| AMD EPYC 7702P | all 128 allowed logical CPUs; `128 × 127 = 16,256` ordered paths | Scalar + fixed 8 | complete; 162,560 rows; hard-pinned | [scalar heatmap](docs/topology-matrix/linux-runs/amd-epyc-7702p-20260715/scalar-heatmap.png) · [fixed-8 heatmap](docs/topology-matrix/linux-runs/amd-epyc-7702p-20260715/fixed-8-heatmap.png) · [3D topology heat cube](docs/topology-matrix/linux-runs/amd-epyc-7702p-20260715/topology-voxel-cube.png) · [raw CSV](docs/topology-matrix/linux-runs/amd-epyc-7702p-20260715/results.csv) · [median summary](docs/topology-matrix/linux-runs/amd-epyc-7702p-20260715/summary.json) · [metadata](docs/topology-matrix/linux-runs/amd-epyc-7702p-20260715/metadata.json) · [width chart](docs/topology-matrix/linux-runs/amd-epyc-7702p-20260715/width-depth.png) |
-| AMD EPYC 7702 | all 256 allowed logical CPUs; `256 × 255 = 65,280` ordered paths | Scalar | complete; 326,400 rows; hard-pinned | [scalar heatmap](docs/topology-matrix/linux-runs/amd-epyc-7702-20260715-145148/scalar-heatmap.png) · [3D topology heat cube](docs/topology-matrix/linux-runs/amd-epyc-7702-20260715-145148/topology-voxel-cube.png) · [raw CSV](docs/topology-matrix/linux-runs/amd-epyc-7702-20260715-145148/results.csv) · [median summary](docs/topology-matrix/linux-runs/amd-epyc-7702-20260715-145148/summary.json) · [metadata](docs/topology-matrix/linux-runs/amd-epyc-7702-20260715-145148/metadata.json) · [width chart](docs/topology-matrix/linux-runs/amd-epyc-7702-20260715-145148/width-depth.png) |
-
-`Intel Xeon E5-2630L v3` isolated campaign validation: 107,136 rows = 992 directed paths × scalar plus
-fixed widths 1–8 × 12 timed rounds; every row has `pinned=1` and finite positive
-throughput. Every path×mode cell has exactly 12 samples; producer/consumer/width/round
-keys are unique. Timed samples target at least 250 ms after calibration. Run provenance
-records `performance` governor, SCHED_RR priority 10, two warmups, and preflight state.
-Median path×mode throughput spans 2.717–576.867 M items/s (overall median 101.856 M items/s).
-Linux NUMA discovery found node 0 CPUs `0–7,16–23` and node 1 CPUs `8–15,24–31`; dashed
-boundaries in heatmaps and voxel cube mark transitions in displayed CPU order. Raw measurements
-completed before renderer dependency failure; plots were regenerated locally from unchanged CSV.
-
-`Intel Xeon E5-2630L v3` prior full-width validation: 44,640 rows = 992 directed paths × scalar plus
-fixed widths 1–8 × five timed rounds; every row has `pinned=1` and finite positive
-throughput. Original measurements incident to CPUs 3 or 19 showed CPU-3 external-workload
-contention. All 5,490 incident rows (122 paths × nine modes × five rounds) were replaced
-with a clean matching-settings rerun after known unrestricted workloads were moved off both
-target CPUs; untouched paths retain original raw samples. Its 8,928 path×mode medians drive one
-exact semi-transparent cube cell per measured producer × consumer × layer. Previous scalar-only
-archive remains preserved separately.
-
-`AMD EPYC 7702P` validation: 162,560 rows = 16,256 directed paths × two modes (scalar,
-fixed width 8) × five timed rounds; every row has `pinned=1` and positive
-throughput. Its median summary contains 32,512 path×mode entries. Published
-artifacts contain no public host identifier.
-
-`AMD EPYC 7702` validation: 326,400 rows = 65,280 directed paths × scalar width × five
-timed rounds; every row has `pinned=1` and positive throughput. Its median
-summary contains 65,280 path×width entries. Raw-sample median throughput is
-22.174 M items/s (range 12.558–397.337). Fixed width remains excluded because
-this CPU's width-8 probe returned invalid pin/rate data.
-
-`--transfers` is calibration work, not necessarily timed work when
-`--min-sample-ms` is nonzero. Each CSV row records `effective_transfers` and
-`calibration_millis`; rate calculation uses effective work. Workers signal
-that affinity setup completed before timing begins. Exact FIFO validation runs
-for every transfer in calibration, warmup, and timed samples.
-
-### Matrix count and reliability tradeoff
-
-A 32-CPU matrix uses ordered non-self pairs: `32 × 31 = 992`, not `32 × 32`.
-`producer → consumer` and `consumer → producer` are separate measurements;
-`producer == consumer` is deliberately excluded. With scalar plus fixed widths
-1–8, there are nine modes, so the matrix has `992 × 9 = 8,928` measured
-pair×mode cells.
-
-Configured with five timed rounds, it writes `8,928 × 5 = 44,640` CSV data
-rows. This is the correct count for the published 32-CPU all-width archive.
-`32 × 32 × 9 × 5 = 46,080` would wrongly include 1,440 self-pair rows.
-`46,095` is not a valid count. `107,136` is also not a valid count for this
-five-round configuration; it was an erroneous progress report from a later
-12-round launch. Twelve rounds would produce `8,928 × 12 = 107,136` timed CSV
-rows, not five rounds.
-
-One warmup, when enabled, adds `8,928` executions but no CSV rows and no
-median inputs. Warmups prime code/data paths before timing; they are not
-recorded measurements.
-
-Five timed samples and their median reduce impact from transient scheduler
-preemption, frequency changes, and IRQ bursts. Calibrating every sample to a
-minimum duration improves stability because fixed timing overhead becomes a
-smaller share of each rate. More rounds improve confidence but multiply serial
-runtime exactly: 12 rounds cost 2.4× five rounds. They do not create full
-isolation: IRQs, kernel work, SMT contention, turbo behavior, and thermal or
-power drift remain possible.
-
-Each archive stores raw measurements plus host metadata. On Linux, metadata records
-NUMA-node membership for allowed CPUs from `sysfs`; renderer maps boundaries by displayed
-CPU order, so sparse/non-contiguous CPU IDs remain correct. Heatmaps draw dashed horizontal
-and vertical boundaries whenever more than one NUMA node appears. Same-domain quadrants lie
-on corresponding diagonal blocks; off-diagonal quadrants cross NUMA interconnect. Voxel cubes
-mark same boundaries on base plane and store them in coverage JSON. If NUMA sysfs is absent,
-physical-package membership is recorded and labelled as fallback; no topology boundary is
-claimed when neither source exists. Existing archives gain marks only after re-rendering from
-metadata containing topology data.
-
-Full matrices grow quickly: `ordered_pairs × (1 + fixed_widths) ×
-(warmups + rounds)`. A 128-selected-CPU / eight-wide system has `128 × 127 ×
-9 = 145,152` pair×mode cells. At five rounds plus one warmup that is 870,912
-executions. With calibrated 100M-transfer cells, serial work is roughly 87
-trillion transfers—days, not minutes. Start with topology classes: SMT sibling,
-same cache cluster, different cache cluster in socket, then cross-NUMA.
-
-Shard exhaustive producer rows across independent identical SSH hosts. Shards
-are disjoint by producer-row index and can merge by concatenating their CSVs
-only when CPU selection, binary, calibration settings, and host topology are
-identical:
-
-```bash
-# Host 0 of 8
-python3 tools/run_topology_matrix.py --max-cpus 128 --transfers 720720 \
-  --min-sample-ms 100 --rounds 5 --warmups 1 \
-  --producer-shards 8 --producer-shard 0 --out /tmp/fq-shard-0
-
-# Host 1 uses --producer-shard 1; continue through 7.
-# Progress stderr reports timed samples completed and rolling ETA.
-cat /tmp/fq-shard-*/results.csv | { head -n 1; grep -hv '^producer_cpu,'; } > merged-results.csv
-```
-
-Use a transfer count divisible by every fixed width: `840` minimum for an
-8-wide target, `720720` minimum for a 16-wide target.
-
-### Detached multi-host Linux runs
-
-`tools/remote_topology.py` stages exact current source as a tarball, builds it
-on each named host, then launches benchmark via remote `nohup`. Jobs survive
-local SSH disconnects and local-machine reboot. They do not survive remote host
-reboot. Each launch creates unique `/tmp/fq-topology-<host>-<timestamp>/` paths
-containing `run.pid`, `command.txt`, `launch.json`, `run.log`, source, build,
-and artifacts. Never reuse a completed remote job directory, because benchmark
-CSV opens with truncation. Default width selection is empty, meaning every
-width supported by target binary: scalar plus widths 1 through target maximum.
-
-```bash
-# Launch fresh full-width topology runs: scalar plus every target-supported fixed width.
-python3 tools/remote_topology.py launch --hosts <configured-hosts> \
-  --transfers 720720 --min-sample-ms 100 --rounds 5 --warmups 1 --plot-cpus 0
-
-# Inspect remote PID, raw CSV row count, and latest progress/ETA without stopping jobs.
-python3 tools/remote_topology.py status --hosts <configured-hosts>
-
-# Copy only finished, fully rendered artifact sets into docs/topology-matrix/linux-runs/.
-python3 tools/remote_topology.py harvest --hosts <configured-hosts>
-```
-
-Host matrices are independent: never merge CSVs from different CPU models or
-topologies. `launch.json` records SSH target, exact source revision, UTC launch
-time, and benchmark arguments. Harvest does not copy a running or incomplete
-result. Validate each harvested `results.csv` for expected pair/mode/round
-coverage and `pinned=1` before publishing links.
-
-A target width is publishable only when every producer→consumer pair and timed
-round has `pinned=1` and finite positive rate. Empty Z layers mean no valid
-measurement exists; renderer never fabricates throughput. To request restricted
-modes for a quick probe, pass `--widths 0,8`; default launcher mode is full
-supported-width coverage.
-
-Artifacts land in `docs/topology-matrix/`:
-
-```text
-results.csv                       raw per-round directed-pair data
-summary.json                      deterministic per-cell medians and samples
-metadata.json                     OS/CPU/placement/benchmark settings
-scalar-heatmap.png                raster producer-row → consumer-column matrix
-fixed-*-heatmap.png               raster largest supported fixed-width matrix
-width-depth.png                   raster median/min–max batch-mode comparison
-topology-voxel-cube.png           rasterized 3D producer-bin × consumer-bin × mode cube
-topology-voxel-cube-coverage.json exact display-bin membership and voxel coverage/statistics
-```
-
-Linux uses `sched_getaffinity` and only tests CPUs allowed by cpuset/container
-policy; each worker calls `pthread_setaffinity_np`, and `pinned=1` in CSV means
-both calls succeeded. CPU IDs can be sparse. Socket/core/SMT labels come from
-Linux sysfs, not guessed numbering. macOS has no public hard logical-CPU
-pinning equivalent; runner records advisory placement confidence and matrix
-rows report pin failure rather than pretending placement is exact. Result is
-still useful as a scheduling-sensitive workload graph, not proof of a physical
-core-to-core path. Existing queue backends support x86_64 and arm64 only.
-New CPU *models* in those architectures need no LLM onboarding—the runner
-probes topology and compiles native code. A genuinely new ISA needs queue
-backend, correctness tests, and performance work before benchmark support.
-
-Measured Linux **smoke probe**: dual-socket AMD EPYC 7702, Linux x86_64. This
-is real hard-pinned FIFO-validated data but not stable enough for topology
-claims: it covers CPUs `0..3` only and used 2,162,160 transfers/sample, which
-can be only a few milliseconds for fixed width 8. It remains a functional
-artifact, not benchmark evidence. Run calibrated samples as above before
-publishing pair-level conclusions.
-
-Graphs stay separate from README. PNGs are static presentation artifacts; CSV
-remains exact directed-path source. Cube aggregation and coverage are explicit in
-companion JSON.
-
-- [Scalar API producer → consumer heatmap](docs/topology-matrix/amd-epyc-7702-dual/scalar-heatmap.png)
-- [Fixed batch 8 producer → consumer heatmap](docs/topology-matrix/amd-epyc-7702-dual/fixed-8-heatmap.png)
-- [Scalar/fixed-width distribution](docs/topology-matrix/amd-epyc-7702-dual/width-depth.png)
-- [3D producer × consumer × width voxel cube](docs/topology-matrix/amd-epyc-7702-dual/topology-voxel-cube.png)
-- [Voxel aggregation and coverage](docs/topology-matrix/amd-epyc-7702-dual/topology-voxel-cube-coverage.json)
-- [Raw results CSV](docs/topology-matrix/amd-epyc-7702-dual/results.csv), [median summary JSON](docs/topology-matrix/amd-epyc-7702-dual/summary.json), and [run metadata](docs/topology-matrix/amd-epyc-7702-dual/metadata.json)
-
-Aggregate median rates across all raw samples: Scalar API **299.104 M items/s**;
-Fixed 1 **299.343**; Fixed 2 **351.495**; Fixed 3 **488.654**; Fixed 4
-**789.799**; Fixed 5 **694.877**; Fixed 6 **728.247**; Fixed 7 **734.957**;
-Fixed 8 **891.849**. Use 3D and 2D pair graphs, not aggregate rates alone, for
-placement choice.
-
 ## Usage
 
 See the original FastQueue (the link above).
 
 (Just copy the header file for your architecture into your project.)
 **fast_queue_arm64.h** / **fast_queue_x86_64.h**
+
 
 ## Bulk API
 
@@ -634,6 +317,329 @@ taskset -c 5,6 ./fastqueue-bulk2
 on supporting CPUs. SIMD modifies payload copy only; it did not make wider Zen2
 batches automatically win. Measure each width and ISA on target hardware before
 claims.
+
+
+## The need for speed
+
+A word on measuring first, because it bit me hard: the original benchmark ran
+each queue back-to-back in a fixed order, and on a laptop that means the queue
+that runs **first** gets the cold/turbo advantage and looks fastest. It also does
+`new`/`delete` per message, and that allocator cost (cross-thread free is
+expensive) dominates the loop and hides the queue entirely. So the numbers below
+come from a rewritten benchmark that **rotates the order every round**, reports
+the **median**, and runs two passes: a *heap* pass (new/delete per message, the
+classic FastQueue benchmark, allocator-bound) and a *pooled* pass (pre-allocated
+objects — this is what actually measures the queue).
+
+Pooled pass, fixed transaction count, higher is better, median of 12 rotated rounds.
+Absolute numbers differ by machine, compiler, clocks, and scheduler; compare queues within
+one row.
+
+| Machine | FastQueue | Deaod | Dro | David V5 |
+| --- | ---: | ---: | ---: | ---: |
+| Apple M5, macOS arm64 | **396.473M** | 165.428M | 77.379M | 154.271M |
+| ARM Cortex-X925 + Cortex-A725, Linux arm64, X925 CPUs 5/6 | 83.678M | 86.346M | **87.382M** | 86.551M |
+| AMD EPYC 7702, Zen2 dual socket, CPUs 1/3 | **123.935M** | 90.443M | 107.959M | 102.075M |
+| AMD EPYC 7702P, Zen2, CPUs 1/3 | **118.629M** | 75.078M | 90.129M | 79.699M |
+| Intel Xeon E5-2630L v3, Haswell, CPUs 1/3 | **117.951M** | 28.725M | 31.869M | 27.067M |
+
+### Measurement method
+
+Every table row uses joined workers, atomic start gate, exact transfer count,
+sequence validation, four-way order rotation, pooled pointers, and a 12-round
+median. Compare queues only within one row.
+
+Apple M5 arm64 row uses 5,000,000 fixed transfers. FastQueue is row winner at
+396.473M/s; Deaod is 165.428M/s, David V5 is 154.271M/s, and Dro is 77.379M/s.
+`FQ_ARM_RING_INLINE=1` uses queue-owned contiguous storage with peer-index caches
+and release/acquire publication. The 100,000,000-transfer confirmation measured
+FastQueue 405.951M/s versus Deaod 176.884M/s, David V5 155.166M/s, and Dro
+72.701M/s. macOS affinity is a scheduler hint, not hard physical-core pinning;
+P-core/E-core placement adds variance.
+
+Cortex-X925 Linux row was re-run with 100,000,000 fixed transfers, physical X925
+CPUs 5 and 6, performance governor, `chrt -f 90`, and
+`g++ -O3 -DNDEBUG -march=native`. Host has two 5-core Cortex-X925 clusters
+(CPUs 5–9 and 15–19) plus Cortex-A725 cores (CPUs 0–4 and 10–14); CPUs 5/6 are
+distinct X925 cores in one cluster at 3.9 GHz. Dro wins this workload at
+87.382M/s; David V5, Deaod, and FastQueue measure 86.551M/s, 86.346M/s, and
+83.678M/s. Results are median of 12 rotated rounds from this current run.
+
+Linux x86 rows use pooled pointers, physical-core pinning, performance governor,
+`chrt -f 90`, `g++ -O3 -DNDEBUG -march=native`, exact sequence validation, and
+fixed transfer counts. FastQueue is row winner on all three listed x86 hosts:
++14.8% versus Dro on dual-socket Zen2, +31.6% on single-socket Zen2, and +270.1%
+on this Haswell. Linux controls improve repeatability; they do not make Linux and
+macOS absolute throughput directly comparable.
+
+David V5 comes from [David Álvarez Rosa's ring-buffer analysis](https://david.alvarezrosa.com/posts/optimizing-a-lock-free-ring-buffer/)
+Results identify row winners only for stated machine/workload conditions, not
+universal #1 across every CPU, compiler, capacity, or latency workload.
+
+Heap pass is allocator-bound. Use pooled objects, rotated order, joined worker
+threads, fixed-work sequence validation, and median distributions for queue
+comparisons.
+### Per-architecture tuning
+
+`fast_queue_arm64.h` selects an inline contiguous ring by default
+(`FQ_ARM_RING_INLINE=1`), which is measured fastest for Apple M5 pooled
+throughput. Define `FQ_ARM_RING_INLINE=0` to restore separately allocated ARM
+storage for experiments. `fast_queue_x86_64.h` selects an x86 profile from
+GCC/Clang `-march` macros:
+
+* `-march=znver2`: `FQ_WRAPPED_INDICES=1`, `FQ_CONSUMER_CUSHION=6`.
+* Other x86 targets: `FQ_WRAPPED_INDICES=0`, `FQ_CONSUMER_CUSHION=0`.
+* Define either macro before including header to override profile.
+* `FQ_OCCUPANCY_INSTRUMENT=1` records empty-refresh occupancy and perturbs
+  throughput; diagnosis only.
+
+Fixed-work reproduction:
+
+```bash
+g++ -O3 -DNDEBUG -std=c++20 -march=native -DPOOLED_ONLY=1 \
+  -DTRANSFER_COUNT=100000000 -DROUNDS=12 -DCONSUMER_CPU=1 -DPRODUCER_CPU=3 \
+  -I. -Ideaod_spsc -Idro main.cpp -o bench
+sudo cpupower frequency-set -g performance
+sudo chrt -f 90 ./bench
+```
+
+## Topology matrix: producer → consumer communication
+
+`FastQueue` performance depends on producer/consumer placement: physical core,
+SMT sibling, cache cluster, socket/NUMA boundary, CPU governor, and queue
+occupancy all affect cache-line handoff. Do not treat one two-core benchmark as
+a universal CPU ranking.
+
+`tools/run_topology_matrix.py` builds an opt-in benchmark and produces an
+ordered producer→consumer matrix for every logical CPU available to current
+process. It measures `Scalar API` separately, then every target-supported
+fixed width (`1..8` on x86_64/common Linux arm64; `1..16` with Apple 128-byte
+ARM batch staging). Diagonal cells are excluded: a queue needs distinct
+producer and consumer threads. CSV rows also record socket/core/SMT data where
+Linux exposes it, hard-pin success, raw rounds, and median summaries.
+
+Published topology graphics are high-resolution PNG files. They use local
+reference-inspired rainbow scale: **blue = slow throughput; red = fast
+throughput**. Each image has own labeled linear M-items/s scale. Matrix rows
+are producers; columns consumers. Hatched diagonal means excluded self-pair;
+light gray means missing measurement.
+
+3D view is rasterized static **exact-cell voxel heat cube**, not exploded plane chart:
+X = producer CPU, Y = consumer CPU, Z = scalar/fixed batch mode, color =
+throughput. Z layers always print in numeric order: `scalar`, `width 1`,
+`width 2`, … through highest supported width; unmeasured layers remain visibly
+empty. Each semi-transparent voxel is one measured directed-pair median:
+no CPU groups, no bin statistics, no aggregate medians. Transparency exposes
+cells behind front faces; subtle cell edges preserve depth. CPU tick labels thin
+only labels, never data. Exact CPU order and every rendered cell live beside
+cube in `topology-voxel-cube-coverage.json`. PNG is static; exact directed-path
+values remain in linked CSV and `summary.json`.
+
+Quick calibrated local probe—four allowed logical CPUs, per-cell work scaled from
+a calibration pass to target at least 100 ms:
+
+```bash
+python3 tools/run_topology_matrix.py \
+  --max-cpus 4 --transfers 720720 --min-sample-ms 100 \
+  --rounds 5 --warmups 1
+```
+
+### Interactive topology explorer
+
+[Open interactive topology explorer](docs/topology-matrix/index.html). GitHub Pages serves this static D3 viewer over HTTPS. It loads run-level summary and metadata JSON first, then shows exact directed producer → consumer → mode medians with hover values, width selection, shared/local scale selection, and same-NUMA versus cross-NUMA filtering. It never groups CPU cells or collapses direction; linked PNGs remain immutable shareable fallbacks and results CSV remains raw per-round source.
+
+### Completed full-span Linux results
+
+| CPU model | Scope | Modes | Status | Artifacts |
+|---|---:|---|---|---|
+| Intel Xeon E5-2630L v3 | all 32 allowed logical CPUs; `32 × 31 = 992` ordered paths | Scalar + fixed 1–8 | **isolated 12-round campaign complete; 107,136 rows; hard-pinned; 250 ms minimum sample; `performance` + SCHED_RR** | [scalar heatmap](docs/topology-matrix/linux-runs/intel-xeon-e5-2630l-v3-20260719-182849/scalar-heatmap.png) · [fixed-8 heatmap](docs/topology-matrix/linux-runs/intel-xeon-e5-2630l-v3-20260719-182849/fixed-8-heatmap.png) · [3D topology heat cube](docs/topology-matrix/linux-runs/intel-xeon-e5-2630l-v3-20260719-182849/topology-voxel-cube.png) · [cube cell coverage](docs/topology-matrix/linux-runs/intel-xeon-e5-2630l-v3-20260719-182849/topology-voxel-cube-coverage.json) · [raw CSV](docs/topology-matrix/linux-runs/intel-xeon-e5-2630l-v3-20260719-182849/results.csv) · [median summary](docs/topology-matrix/linux-runs/intel-xeon-e5-2630l-v3-20260719-182849/summary.json) · [metadata](docs/topology-matrix/linux-runs/intel-xeon-e5-2630l-v3-20260719-182849/metadata.json) · [width chart](docs/topology-matrix/linux-runs/intel-xeon-e5-2630l-v3-20260719-182849/width-depth.png) |
+| Intel Xeon E5-2630L v3 | all 32 allowed logical CPUs; `32 × 31 = 992` ordered paths | Scalar + fixed 1–8 | prior five-round archive; 44,640 rows; hard-pinned | [scalar heatmap](docs/topology-matrix/linux-runs/intel-xeon-e5-2630l-v3-20260718-194430/scalar-heatmap.png) · [fixed-8 heatmap](docs/topology-matrix/linux-runs/intel-xeon-e5-2630l-v3-20260718-194430/fixed-8-heatmap.png) · [3D topology heat cube](docs/topology-matrix/linux-runs/intel-xeon-e5-2630l-v3-20260718-194430/topology-voxel-cube.png) · [cube cell coverage](docs/topology-matrix/linux-runs/intel-xeon-e5-2630l-v3-20260718-194430/topology-voxel-cube-coverage.json) · [raw CSV](docs/topology-matrix/linux-runs/intel-xeon-e5-2630l-v3-20260718-194430/results.csv) · [median summary](docs/topology-matrix/linux-runs/intel-xeon-e5-2630l-v3-20260718-194430/summary.json) · [metadata](docs/topology-matrix/linux-runs/intel-xeon-e5-2630l-v3-20260718-194430/metadata.json) · [width chart](docs/topology-matrix/linux-runs/intel-xeon-e5-2630l-v3-20260718-194430/width-depth.png) |
+| AMD EPYC 7702P | all 128 allowed logical CPUs; `128 × 127 = 16,256` ordered paths | Scalar + fixed 8 | complete; 162,560 rows; hard-pinned | [scalar heatmap](docs/topology-matrix/linux-runs/amd-epyc-7702p-20260715/scalar-heatmap.png) · [fixed-8 heatmap](docs/topology-matrix/linux-runs/amd-epyc-7702p-20260715/fixed-8-heatmap.png) · [3D topology heat cube](docs/topology-matrix/linux-runs/amd-epyc-7702p-20260715/topology-voxel-cube.png) · [raw CSV](docs/topology-matrix/linux-runs/amd-epyc-7702p-20260715/results.csv) · [median summary](docs/topology-matrix/linux-runs/amd-epyc-7702p-20260715/summary.json) · [metadata](docs/topology-matrix/linux-runs/amd-epyc-7702p-20260715/metadata.json) · [width chart](docs/topology-matrix/linux-runs/amd-epyc-7702p-20260715/width-depth.png) |
+| AMD EPYC 7702 | all 256 allowed logical CPUs; `256 × 255 = 65,280` ordered paths | Scalar | complete; 326,400 rows; hard-pinned | [scalar heatmap](docs/topology-matrix/linux-runs/amd-epyc-7702-20260715-145148/scalar-heatmap.png) · [3D topology heat cube](docs/topology-matrix/linux-runs/amd-epyc-7702-20260715-145148/topology-voxel-cube.png) · [raw CSV](docs/topology-matrix/linux-runs/amd-epyc-7702-20260715-145148/results.csv) · [median summary](docs/topology-matrix/linux-runs/amd-epyc-7702-20260715-145148/summary.json) · [metadata](docs/topology-matrix/linux-runs/amd-epyc-7702-20260715-145148/metadata.json) · [width chart](docs/topology-matrix/linux-runs/amd-epyc-7702-20260715-145148/width-depth.png) |
+
+`Intel Xeon E5-2630L v3` isolated campaign validation: 107,136 rows = 992 directed paths × scalar plus
+fixed widths 1–8 × 12 timed rounds; every row has `pinned=1` and finite positive
+throughput. Every path×mode cell has exactly 12 samples; producer/consumer/width/round
+keys are unique. Timed samples target at least 250 ms after calibration. Run provenance
+records `performance` governor, SCHED_RR priority 10, two warmups, and preflight state.
+Median path×mode throughput spans 2.717–576.867 M items/s (overall median 101.856 M items/s).
+Linux NUMA discovery found node 0 CPUs `0–7,16–23` and node 1 CPUs `8–15,24–31`; dashed
+boundaries in heatmaps and voxel cube mark transitions in displayed CPU order. Raw measurements
+completed before renderer dependency failure; plots were regenerated locally from unchanged CSV.
+
+`Intel Xeon E5-2630L v3` prior full-width validation: 44,640 rows = 992 directed paths × scalar plus
+fixed widths 1–8 × five timed rounds; every row has `pinned=1` and finite positive
+throughput. Original measurements incident to CPUs 3 or 19 showed CPU-3 external-workload
+contention. All 5,490 incident rows (122 paths × nine modes × five rounds) were replaced
+with a clean matching-settings rerun after known unrestricted workloads were moved off both
+target CPUs; untouched paths retain original raw samples. Its 8,928 path×mode medians drive one
+exact semi-transparent cube cell per measured producer × consumer × layer. Previous scalar-only
+archive remains preserved separately.
+
+`AMD EPYC 7702P` validation: 162,560 rows = 16,256 directed paths × two modes (scalar,
+fixed width 8) × five timed rounds; every row has `pinned=1` and positive
+throughput. Its median summary contains 32,512 path×mode entries. Published
+artifacts contain no public host identifier.
+
+`AMD EPYC 7702` validation: 326,400 rows = 65,280 directed paths × scalar width × five
+timed rounds; every row has `pinned=1` and positive throughput. Its median
+summary contains 65,280 path×width entries. Raw-sample median throughput is
+22.174 M items/s (range 12.558–397.337). Fixed width remains excluded because
+this CPU's width-8 probe returned invalid pin/rate data.
+
+`--transfers` is calibration work, not necessarily timed work when
+`--min-sample-ms` is nonzero. Each CSV row records `effective_transfers` and
+`calibration_millis`; rate calculation uses effective work. Workers signal
+that affinity setup completed before timing begins. Exact FIFO validation runs
+for every transfer in calibration, warmup, and timed samples.
+
+### Matrix count and reliability tradeoff
+
+A 32-CPU matrix uses ordered non-self pairs: `32 × 31 = 992`, not `32 × 32`.
+`producer → consumer` and `consumer → producer` are separate measurements;
+`producer == consumer` is deliberately excluded. With scalar plus fixed widths
+1–8, there are nine modes, so the matrix has `992 × 9 = 8,928` measured
+pair×mode cells.
+
+Configured with five timed rounds, it writes `8,928 × 5 = 44,640` CSV data
+rows. This is the correct count for the published 32-CPU all-width archive.
+`32 × 32 × 9 × 5 = 46,080` would wrongly include 1,440 self-pair rows.
+`46,095` is not a valid count. `107,136` is also not a valid count for this
+five-round configuration; it was an erroneous progress report from a later
+12-round launch. Twelve rounds would produce `8,928 × 12 = 107,136` timed CSV
+rows, not five rounds.
+
+One warmup, when enabled, adds `8,928` executions but no CSV rows and no
+median inputs. Warmups prime code/data paths before timing; they are not
+recorded measurements.
+
+Five timed samples and their median reduce impact from transient scheduler
+preemption, frequency changes, and IRQ bursts. Calibrating every sample to a
+minimum duration improves stability because fixed timing overhead becomes a
+smaller share of each rate. More rounds improve confidence but multiply serial
+runtime exactly: 12 rounds cost 2.4× five rounds. They do not create full
+isolation: IRQs, kernel work, SMT contention, turbo behavior, and thermal or
+power drift remain possible.
+
+Each archive stores raw measurements plus host metadata. On Linux, metadata records
+NUMA-node membership for allowed CPUs from `sysfs`; renderer maps boundaries by displayed
+CPU order, so sparse/non-contiguous CPU IDs remain correct. Heatmaps draw dashed horizontal
+and vertical boundaries whenever more than one NUMA node appears. Same-domain quadrants lie
+on corresponding diagonal blocks; off-diagonal quadrants cross NUMA interconnect. Voxel cubes
+mark same boundaries on base plane and store them in coverage JSON. If NUMA sysfs is absent,
+physical-package membership is recorded and labelled as fallback; no topology boundary is
+claimed when neither source exists. Existing archives gain marks only after re-rendering from
+metadata containing topology data.
+
+Full matrices grow quickly: `ordered_pairs × (1 + fixed_widths) ×
+(warmups + rounds)`. A 128-selected-CPU / eight-wide system has `128 × 127 ×
+9 = 145,152` pair×mode cells. At five rounds plus one warmup that is 870,912
+executions. With calibrated 100M-transfer cells, serial work is roughly 87
+trillion transfers—days, not minutes. Start with topology classes: SMT sibling,
+same cache cluster, different cache cluster in socket, then cross-NUMA.
+
+Shard exhaustive producer rows across independent identical SSH hosts. Shards
+are disjoint by producer-row index and can merge by concatenating their CSVs
+only when CPU selection, binary, calibration settings, and host topology are
+identical:
+
+```bash
+# Host 0 of 8
+python3 tools/run_topology_matrix.py --max-cpus 128 --transfers 720720 \
+  --min-sample-ms 100 --rounds 5 --warmups 1 \
+  --producer-shards 8 --producer-shard 0 --out /tmp/fq-shard-0
+
+# Host 1 uses --producer-shard 1; continue through 7.
+# Progress stderr reports timed samples completed and rolling ETA.
+cat /tmp/fq-shard-*/results.csv | { head -n 1; grep -hv '^producer_cpu,'; } > merged-results.csv
+```
+
+Use a transfer count divisible by every fixed width: `840` minimum for an
+8-wide target, `720720` minimum for a 16-wide target.
+
+### Detached multi-host Linux runs
+
+`tools/remote_topology.py` stages exact current source as a tarball, builds it
+on each named host, then launches benchmark via remote `nohup`. Jobs survive
+local SSH disconnects and local-machine reboot. They do not survive remote host
+reboot. Each launch creates unique `/tmp/fq-topology-<host>-<timestamp>/` paths
+containing `run.pid`, `command.txt`, `launch.json`, `run.log`, source, build,
+and artifacts. Never reuse a completed remote job directory, because benchmark
+CSV opens with truncation. Default width selection is empty, meaning every
+width supported by target binary: scalar plus widths 1 through target maximum.
+
+```bash
+# Launch fresh full-width topology runs: scalar plus every target-supported fixed width.
+python3 tools/remote_topology.py launch --hosts <configured-hosts> \
+  --transfers 720720 --min-sample-ms 100 --rounds 5 --warmups 1 --plot-cpus 0
+
+# Inspect remote PID, raw CSV row count, and latest progress/ETA without stopping jobs.
+python3 tools/remote_topology.py status --hosts <configured-hosts>
+
+# Copy only finished, fully rendered artifact sets into docs/topology-matrix/linux-runs/.
+python3 tools/remote_topology.py harvest --hosts <configured-hosts>
+```
+
+Host matrices are independent: never merge CSVs from different CPU models or
+topologies. `launch.json` records SSH target, exact source revision, UTC launch
+time, and benchmark arguments. Harvest does not copy a running or incomplete
+result. Validate each harvested `results.csv` for expected pair/mode/round
+coverage and `pinned=1` before publishing links.
+
+A target width is publishable only when every producer→consumer pair and timed
+round has `pinned=1` and finite positive rate. Empty Z layers mean no valid
+measurement exists; renderer never fabricates throughput. To request restricted
+modes for a quick probe, pass `--widths 0,8`; default launcher mode is full
+supported-width coverage.
+
+Artifacts land in `docs/topology-matrix/`:
+
+```text
+results.csv                       raw per-round directed-pair data
+summary.json                      deterministic per-cell medians and samples
+metadata.json                     OS/CPU/placement/benchmark settings
+scalar-heatmap.png                raster producer-row → consumer-column matrix
+fixed-*-heatmap.png               raster largest supported fixed-width matrix
+width-depth.png                   raster median/min–max batch-mode comparison
+topology-voxel-cube.png           rasterized 3D producer-bin × consumer-bin × mode cube
+topology-voxel-cube-coverage.json exact display-bin membership and voxel coverage/statistics
+```
+
+Linux uses `sched_getaffinity` and only tests CPUs allowed by cpuset/container
+policy; each worker calls `pthread_setaffinity_np`, and `pinned=1` in CSV means
+both calls succeeded. CPU IDs can be sparse. Socket/core/SMT labels come from
+Linux sysfs, not guessed numbering. macOS has no public hard logical-CPU
+pinning equivalent; runner records advisory placement confidence and matrix
+rows report pin failure rather than pretending placement is exact. Result is
+still useful as a scheduling-sensitive workload graph, not proof of a physical
+core-to-core path. Existing queue backends support x86_64 and arm64 only.
+New CPU *models* in those architectures need no LLM onboarding—the runner
+probes topology and compiles native code. A genuinely new ISA needs queue
+backend, correctness tests, and performance work before benchmark support.
+
+Measured Linux **smoke probe**: dual-socket AMD EPYC 7702, Linux x86_64. This
+is real hard-pinned FIFO-validated data but not stable enough for topology
+claims: it covers CPUs `0..3` only and used 2,162,160 transfers/sample, which
+can be only a few milliseconds for fixed width 8. It remains a functional
+artifact, not benchmark evidence. Run calibrated samples as above before
+publishing pair-level conclusions.
+
+Graphs stay separate from README. PNGs are static presentation artifacts; CSV
+remains exact directed-path source. Cube aggregation and coverage are explicit in
+companion JSON.
+
+- [Scalar API producer → consumer heatmap](docs/topology-matrix/amd-epyc-7702-dual/scalar-heatmap.png)
+- [Fixed batch 8 producer → consumer heatmap](docs/topology-matrix/amd-epyc-7702-dual/fixed-8-heatmap.png)
+- [Scalar/fixed-width distribution](docs/topology-matrix/amd-epyc-7702-dual/width-depth.png)
+- [3D producer × consumer × width voxel cube](docs/topology-matrix/amd-epyc-7702-dual/topology-voxel-cube.png)
+- [Voxel aggregation and coverage](docs/topology-matrix/amd-epyc-7702-dual/topology-voxel-cube-coverage.json)
+- [Raw results CSV](docs/topology-matrix/amd-epyc-7702-dual/results.csv), [median summary JSON](docs/topology-matrix/amd-epyc-7702-dual/summary.json), and [run metadata](docs/topology-matrix/amd-epyc-7702-dual/metadata.json)
+
+Aggregate median rates across all raw samples: Scalar API **299.104 M items/s**;
+Fixed 1 **299.343**; Fixed 2 **351.495**; Fixed 3 **488.654**; Fixed 4
+**789.799**; Fixed 5 **694.877**; Fixed 6 **728.247**; Fixed 7 **734.957**;
+Fixed 8 **891.849**. Use 3D and 2D pair graphs, not aggregate rates alone, for
+placement choice.
 
 ## Build and run the tests
 

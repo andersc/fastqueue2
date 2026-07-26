@@ -1,0 +1,20 @@
+{
+  "runs": [
+    {
+      "id": "intel-xeon-e5-2630l-v3-20260719-182849",
+      "label": "Intel Xeon E5-2630L v3 — isolated 12-round campaign"
+    },
+    {
+      "id": "intel-xeon-e5-2630l-v3-20260715-145151",
+      "label": "Intel Xeon E5-2630L v3 — prior five-round campaign"
+    },
+    {
+      "id": "amd-epyc-7702-20260715-145148",
+      "label": "AMD EPYC 7702 — scalar full-span campaign"
+    },
+    {
+      "id": "amd-epyc-7702p-20260715",
+      "label": "AMD EPYC 7702P — historical scalar and width-8 campaign"
+    }
+  ]
+}
