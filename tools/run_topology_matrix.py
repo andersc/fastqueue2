@@ -110,9 +110,12 @@ def raster_modules():
     return plt, np, LinearSegmentedColormap.from_list('fq_rainbow', [c for _, c in RAINBOW_STOPS])
 
 def cpus_for(rows, meta):
-    declared = meta.get('allowed_cpus', [])
+    # A targeted campaign must display only its measured/declared selected CPUs.
+    # `allowed_cpus` describes host affinity capability and can be much broader.
+    declared = meta.get('selected_cpus')
+    if declared is None:
+        declared = sorted({int(r['producer_cpu']) for r in rows} | {int(r['consumer_cpu']) for r in rows})
     measured = {int(r['producer_cpu']) for r in rows} | {int(r['consumer_cpu']) for r in rows}
-    # Retain declared CPU universe when metadata has it; otherwise exact measured IDs.
     return sorted(set(map(int, declared)) | measured)
 
 
@@ -260,15 +263,16 @@ def render(rows, out: Path, meta: dict, max_cpus: int):
 
 def main():
 
-    p=argparse.ArgumentParser(description=__doc__); p.add_argument('--out',type=Path,default=ROOT/'docs'/'topology-matrix'); p.add_argument('--max-cpus',type=int,default=0); p.add_argument('--3d-max-cpus',type=int,default=0,help='deprecated compatibility option; exact-cell cube never groups CPU data'); p.add_argument('--transfers',type=int,default=2162160,help='calibration transfers; exact multiple of all fixed widths'); p.add_argument('--min-sample-ms',type=int,default=0,help='calibrate every producer/to/width cell to at least this timed duration; 0 disables'); p.add_argument('--rounds',type=int,default=3); p.add_argument('--widths',default='',help='comma-separated widths; 0=scalar, empty=all supported widths'); p.add_argument('--warmups',type=int,default=1); p.add_argument('--producer-shard',type=int,default=0,help='zero-based producer-row shard'); p.add_argument('--producer-shards',type=int,default=1,help='total non-overlapping producer-row shards'); p.add_argument('--no-build',action='store_true'); p.add_argument('--render-only',action='store_true',help='regenerate PNGs from existing results.csv and metadata.json'); a=p.parse_args()
+    p=argparse.ArgumentParser(description=__doc__); p.add_argument('--out',type=Path,default=ROOT/'docs'/'topology-matrix'); p.add_argument('--max-cpus',type=int,default=0); p.add_argument('--3d-max-cpus',type=int,default=0,help='deprecated compatibility option; exact-cell cube never groups CPU data'); p.add_argument('--transfers',type=int,default=2162160,help='calibration transfers; exact multiple of all fixed widths'); p.add_argument('--min-sample-ms',type=int,default=0,help='calibrate every producer/to/width cell to at least this timed duration; 0 disables'); p.add_argument('--rounds',type=int,default=3); p.add_argument('--widths',default='',help='comma-separated widths; 0=scalar, empty=all supported widths'); p.add_argument('--warmups',type=int,default=1); p.add_argument('--cpus',default='',help='comma-separated CPU universe for targeted runs'); p.add_argument('--producer-cpus',default='',help='comma-separated producer CPUs within --cpus'); p.add_argument('--consumer-cpus',default='',help='comma-separated consumer CPUs within --cpus'); p.add_argument('--producer-shard',type=int,default=0,help='zero-based producer-row shard'); p.add_argument('--producer-shards',type=int,default=1,help='total non-overlapping producer-row shards'); p.add_argument('--no-build',action='store_true'); p.add_argument('--render-only',action='store_true',help='regenerate PNGs from existing results.csv and metadata.json'); p.add_argument('--skip-render',action='store_true',help='write raw CSV, metadata, and summary without Matplotlib artifacts'); a=p.parse_args()
     a.out.mkdir(parents=True,exist_ok=True)
     csv_path=a.out/'results.csv'
     if a.render_only:
         if not csv_path.exists(): raise SystemExit(f'--render-only needs {csv_path}')
         meta=json.loads((a.out/'metadata.json').read_text()) if (a.out/'metadata.json').exists() else metadata()
         rows=aggregate(load(csv_path)); (a.out/'summary.json').write_text(json.dumps(rows,indent=2)+'\n')
-        render(rows, a.out, meta, a.__dict__['3d_max_cpus'])
-        print(f'Rendered PNG artifacts from {csv_path}')
+        if not a.skip_render:
+            render(rows, a.out, meta, a.__dict__['3d_max_cpus'])
+        print(f"{'Rendered PNG artifacts from' if not a.skip_render else 'Wrote summary from'} {csv_path}")
         return
     meta=metadata(); (a.out/'metadata.json').write_text(json.dumps(meta,indent=2)+'\n')
     if a.no_build:
@@ -278,8 +282,10 @@ def main():
             raise SystemExit('--no-build needs fast_queue_topology_matrix in cmake-build-release or cmake-build-topology')
     else:
         exe = build(ROOT/'cmake-build-topology')
-    csv_path=a.out/'results.csv'; run_args=[exe,'--output',csv_path,'--max-cpus',str(a.max_cpus),'--transfers',str(a.transfers),'--rounds',str(a.rounds),'--warmups',str(a.warmups),'--min-sample-ms',str(a.min_sample_ms),'--producer-shard',str(a.producer_shard),'--producer-shards',str(a.producer_shards)] + (['--widths',a.widths] if a.widths else []); command(run_args); meta['benchmark']={'calibration_transfers':a.transfers,'min_sample_ms':a.min_sample_ms,'rounds':a.rounds,'warmups':a.warmups,'producer_shard':a.producer_shard,'producer_shards':a.producer_shards,'widths':a.widths or 'all supported'}; (a.out/'metadata.json').write_text(json.dumps(meta,indent=2)+'\n')
+    csv_path=a.out/'results.csv'; run_args=[exe,'--output',csv_path,'--max-cpus',str(a.max_cpus),'--transfers',str(a.transfers),'--rounds',str(a.rounds),'--warmups',str(a.warmups),'--min-sample-ms',str(a.min_sample_ms),'--producer-shard',str(a.producer_shard),'--producer-shards',str(a.producer_shards)] + (['--widths',a.widths] if a.widths else []) + (['--cpus',a.cpus] if a.cpus else []) + (['--producer-cpus',a.producer_cpus] if a.producer_cpus else []) + (['--consumer-cpus',a.consumer_cpus] if a.consumer_cpus else []); command(run_args); selected = [int(x) for x in a.cpus.split(',') if x.strip()] if a.cpus else []; meta['selected_cpus'] = selected or sorted({int(r['producer_cpu']) for r in load(csv_path)} | {int(r['consumer_cpu']) for r in load(csv_path)}); meta['topology_domains'] = linux_topology(meta['selected_cpus']) if meta.get('os') == 'Linux' else meta.get('topology_domains', {}); meta['benchmark']={'calibration_transfers':a.transfers,'min_sample_ms':a.min_sample_ms,'rounds':a.rounds,'warmups':a.warmups,'producer_shard':a.producer_shard,'producer_shards':a.producer_shards,'widths':a.widths or 'all supported','cpus':a.cpus or 'all allowed','producer_cpus':a.producer_cpus or 'all selected','consumer_cpus':a.consumer_cpus or 'all selected'}; (a.out/'metadata.json').write_text(json.dumps(meta,indent=2)+'\n')
     rows=aggregate(load(csv_path)); (a.out/'summary.json').write_text(json.dumps(rows,indent=2)+'\n')
-    render(rows, a.out, meta, a.__dict__['3d_max_cpus'])
-    print(f'Wrote {csv_path}, summary.json, scalar-heatmap.png, fixed-{max((int(r["width"]) for r in rows), default=0)}-heatmap.png, width-depth.png, topology-voxel-cube.png')
+    if not a.skip_render:
+        render(rows, a.out, meta, a.__dict__['3d_max_cpus'])
+    rendered = 'scalar-heatmap.png, fixed-width heatmap, width-depth.png, topology-voxel-cube.png' if not a.skip_render else 'no PNG artifacts (--skip-render)'
+    print(f'Wrote {csv_path}, summary.json, {rendered}')
 if __name__ == '__main__': main()

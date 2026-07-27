@@ -6,13 +6,13 @@ runs under nohup. SSH disconnects or local-machine reboots do not stop jobs.
 Never launch over an existing output directory: benchmark CSV output truncates.
 """
 from __future__ import annotations
-import argparse, json, shlex, subprocess, sys, tarfile, tempfile, time
+import argparse, json, shlex, shutil, subprocess, sys, tarfile, tempfile, time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 HOSTS = {
     "f131": "anders.cedronius@f131-lab-ac.lab.tickup.net",
-    "f177": "anders.cedronius@s05u24-f177-lab.infra.tickup.io",
+    "f177": "anders.cedronius@f177-lab.lab.tickup.net",
     "f061": "anders.cedronius@f061-lab-gpu.lab.tickup.net",
 }
 SSH = ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=12"]
@@ -86,6 +86,8 @@ data = {{
   'loadavg': pathlib.Path('/proc/loadavg').read_text().strip(),
   'online_cpus': pathlib.Path('/sys/devices/system/cpu/online').read_text().strip(),
   'governor': {{p.name: p.read_text().strip() for p in pathlib.Path('/sys/devices/system/cpu').glob('cpu*/cpufreq/scaling_governor')}},
+  'frequency_khz': {{p.parent.parent.name: p.read_text().strip() for p in pathlib.Path('/sys/devices/system/cpu').glob('cpu*/cpufreq/scaling_cur_freq')}},
+  'cpuinfo_max_frequency_khz': {{p.parent.parent.name: p.read_text().strip() for p in pathlib.Path('/sys/devices/system/cpu').glob('cpu*/cpufreq/cpuinfo_max_freq')}},
   'irq_affinity': {{p.name: p.read_text().strip() for p in pathlib.Path('/proc/irq').glob('*/smp_affinity_list') if p.is_file()}},
   'controls': [
     'benchmark workers use sched_setaffinity hard logical-CPU pinning',
@@ -109,11 +111,14 @@ def launch(args):
             if cp.returncode:
                 raise SystemExit(f"{label}: staging failed: {cp.stderr.strip()}")
             widths_arg = f"--widths {shlex.quote(args.widths)} " if args.widths else ""
+            cpus_arg = f"--cpus {shlex.quote(args.cpus)} " if args.cpus else ""
+            producers_arg = f"--producer-cpus {shlex.quote(args.producer_cpus)} " if args.producer_cpus else ""
+            consumers_arg = f"--consumer-cpus {shlex.quote(args.consumer_cpus)} " if args.consumer_cpus else ""
             cmd = (
                 f"cd {out}/src && python3 tools/run_topology_matrix.py "
-                f"--max-cpus 0 {widths_arg}--transfers {args.transfers} "
+                f"--max-cpus 0 {widths_arg}{cpus_arg}{producers_arg}{consumers_arg}--transfers {args.transfers} "
                 f"--min-sample-ms {args.min_sample_ms} --rounds {args.rounds} "
-                f"--warmups {args.warmups} --3d-max-cpus {args.plot_cpus} --out {out}/artifacts"
+                f"--warmups {args.warmups} --3d-max-cpus {args.plot_cpus} --skip-render --out {out}/artifacts"
             )
             setup = f"""set -eu
 set -o pipefail
@@ -184,7 +189,7 @@ import json, pathlib, subprocess, sys, time
 p=pathlib.Path(sys.argv[1]); d=json.loads(p.read_text()); d['finished_utc']=time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()); d['exit_code']=int(sys.argv[2])
 def run(c):
  x=subprocess.run(c,text=True,capture_output=True); return {{'command':c,'returncode':x.returncode,'stdout':x.stdout.strip(),'stderr':x.stderr.strip()}}
-d['effective_before_restore']={{'governor':{{x.parent.parent.name:x.read_text().strip() for x in pathlib.Path('/sys/devices/system/cpu').glob('cpu*/cpufreq/scaling_governor')}},'launcher_scheduler':run(['chrt','-p',str(__import__('os').getpid())]),'launcher_affinity':run(['taskset','-pc',str(__import__('os').getpid())])}}
+d['effective_before_restore']={{'governor':{{x.parent.parent.name:x.read_text().strip() for x in pathlib.Path('/sys/devices/system/cpu').glob('cpu*/cpufreq/scaling_governor')}},'frequency_khz':{{x.parent.parent.name:x.read_text().strip() for x in pathlib.Path('/sys/devices/system/cpu').glob('cpu*/cpufreq/scaling_cur_freq')}},'launcher_scheduler':run(['chrt','-p',str(__import__('os').getpid())]),'launcher_affinity':run(['taskset','-pc',str(__import__('os').getpid())])}}
 p.write_text(json.dumps(d,indent=2,sort_keys=True)+'\\n')
 PY
 exit "$rc"
@@ -281,11 +286,10 @@ def harvest(args):
         target = dest / Path(d).name
         target.mkdir(exist_ok=True)
         local(["scp", "-r", "-o", "BatchMode=yes", "-o", "ConnectTimeout=12", f"{HOSTS[label]}:{artifacts}/.", str(target)])
-        if label == "f177":
-            local(["scp", "-o", "BatchMode=yes", "-o", "ConnectTimeout=12", f"{HOSTS[label]}:{d}/run.log", f"{HOSTS[label]}:{d}/run.pid", str(target)])
-        else:
-            local(["scp", "-o", "BatchMode=yes", "-o", "ConnectTimeout=12", f"{HOSTS[label]}:{d}/launch.json", f"{HOSTS[label]}:{d}/command.txt", f"{HOSTS[label]}:{d}/isolation-preflight.json", str(target)])
-        print(f"{label}: harvested {target}")
+        local(["scp", "-o", "BatchMode=yes", "-o", "ConnectTimeout=12", f"{HOSTS[label]}:{d}/launch.json", f"{HOSTS[label]}:{d}/command.txt", f"{HOSTS[label]}:{d}/isolation-preflight.json", str(target)])
+        runner = ROOT / "tools" / "run_topology_matrix.py"
+        local([sys.executable, str(runner), "--render-only", "--out", str(target)])
+        print(f"{label}: harvested and rendered {target}")
 
 
 def main():
@@ -306,6 +310,9 @@ def main():
                    help="real-time priority (1..99); bounded default avoids maximum priority")
     p.add_argument("--plot-cpus", type=int, default=0)
     p.add_argument("--widths", default="", help="comma-separated modes; empty runs all supported widths (0=scalar)")
+    p.add_argument("--cpus", default="", help="comma-separated CPU universe for targeted runs")
+    p.add_argument("--producer-cpus", default="", help="comma-separated producer CPUs within --cpus")
+    p.add_argument("--consumer-cpus", default="", help="comma-separated consumer CPUs within --cpus")
     a = p.parse_args()
     {"launch": launch, "stop": stop, "status": status, "harvest": harvest}[a.action](a)
 
