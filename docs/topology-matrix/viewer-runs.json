@@ -2,15 +2,7 @@
   "runs": [
     {
       "id": "fq-topology-f061-20260727-211436",
-      "label": "Intel Xeon E5-2630L v3 — 48-round scalar stability rerun (CPUs 16, 17, 18)"
-    },
-    {
-      "id": "intel-xeon-e5-2630l-v3-20260719-182849",
-      "label": "Intel Xeon E5-2630L v3 — isolated 12-round campaign"
-    },
-    {
-      "id": "intel-xeon-e5-2630l-v3-20260715-145151",
-      "label": "Intel Xeon E5-2630L v3 — prior five-round campaign"
+      "label": "Intel Xeon E5-2630L v3"
     }
   ]
 }

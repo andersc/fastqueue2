@@ -1,1 +1,1 @@
-cd /tmp/fq-topology-f061-20260727-211436/src && python3 tools/run_topology_matrix.py --max-cpus 0 --widths 0 --cpus 16,17,18 --transfers 720720 --min-sample-ms 500 --rounds 48 --warmups 2 --3d-max-cpus 0 --out /tmp/fq-topology-f061-20260727-211436/artifacts
+Consolidated canonical E5-2630L dataset: 12-round full matrix with scalar CPU 16–18 cells replaced by 48-round stability rerun samples. See metadata.json provenance.

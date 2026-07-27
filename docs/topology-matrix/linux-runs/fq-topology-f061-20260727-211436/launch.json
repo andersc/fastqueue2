@@ -1,1 +1,7 @@
-{"config": {"action": "launch", "consumer_cpus": "", "cpus": "16,17,18", "governor": "performance", "hosts": ["f061"], "min_sample_ms": 500, "plot_cpus": 0, "preflight_seconds": 30, "producer_cpus": "", "rounds": 48, "rt_policy": "rr", "rt_priority": 10, "transfers": 720720, "warmups": 2, "widths": "0"}, "host": "f061", "source_revision": "be8a5825302a37dd08a5580186d7a4e4bdd17a94", "ssh": "anders.cedronius@f061-lab-gpu.lab.tickup.net", "started_utc": "2026-07-27T19:14:39Z"}
+{
+  "dataset": "consolidated canonical E5-2630L system matrix",
+  "source_runs": [
+    "intel-xeon-e5-2630l-v3-20260719-182849",
+    "fq-topology-f061-20260727-211436"
+  ]
+}

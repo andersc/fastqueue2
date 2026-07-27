@@ -450,48 +450,11 @@ python3 tools/run_topology_matrix.py \
 
 ### Completed full-span Linux results
 
-| CPU model | Scope | Modes | Status | Artifacts |
-|---|---:|---|---|---|
-| Intel Xeon E5-2630L v3 | all 32 allowed logical CPUs; `32 × 31 = 992` ordered paths | Scalar + fixed 1–8 | **isolated 12-round campaign complete; 107,136 rows; hard-pinned; 250 ms minimum sample; `performance` + SCHED_RR** | [scalar heatmap](docs/topology-matrix/linux-runs/intel-xeon-e5-2630l-v3-20260719-182849/scalar-heatmap.png) · [fixed-8 heatmap](docs/topology-matrix/linux-runs/intel-xeon-e5-2630l-v3-20260719-182849/fixed-8-heatmap.png) · [3D topology heat cube](docs/topology-matrix/linux-runs/intel-xeon-e5-2630l-v3-20260719-182849/topology-voxel-cube.png) · [cube cell coverage](docs/topology-matrix/linux-runs/intel-xeon-e5-2630l-v3-20260719-182849/topology-voxel-cube-coverage.json) · [raw CSV](docs/topology-matrix/linux-runs/intel-xeon-e5-2630l-v3-20260719-182849/results.csv) · [median summary](docs/topology-matrix/linux-runs/intel-xeon-e5-2630l-v3-20260719-182849/summary.json) · [metadata](docs/topology-matrix/linux-runs/intel-xeon-e5-2630l-v3-20260719-182849/metadata.json) · [width chart](docs/topology-matrix/linux-runs/intel-xeon-e5-2630l-v3-20260719-182849/width-depth.png) |
-| Intel Xeon E5-2630L v3 | all 32 allowed logical CPUs; `32 × 31 = 992` ordered paths | Scalar + fixed 1–8 | prior five-round archive; 44,640 rows; hard-pinned | [scalar heatmap](docs/topology-matrix/linux-runs/intel-xeon-e5-2630l-v3-20260718-194430/scalar-heatmap.png) · [fixed-8 heatmap](docs/topology-matrix/linux-runs/intel-xeon-e5-2630l-v3-20260718-194430/fixed-8-heatmap.png) · [3D topology heat cube](docs/topology-matrix/linux-runs/intel-xeon-e5-2630l-v3-20260718-194430/topology-voxel-cube.png) · [cube cell coverage](docs/topology-matrix/linux-runs/intel-xeon-e5-2630l-v3-20260718-194430/topology-voxel-cube-coverage.json) · [raw CSV](docs/topology-matrix/linux-runs/intel-xeon-e5-2630l-v3-20260718-194430/results.csv) · [median summary](docs/topology-matrix/linux-runs/intel-xeon-e5-2630l-v3-20260718-194430/summary.json) · [metadata](docs/topology-matrix/linux-runs/intel-xeon-e5-2630l-v3-20260718-194430/metadata.json) · [width chart](docs/topology-matrix/linux-runs/intel-xeon-e5-2630l-v3-20260718-194430/width-depth.png) |
-| AMD EPYC 7702P | all 128 allowed logical CPUs; `128 × 127 = 16,256` ordered paths | Scalar + fixed 8 | complete; 162,560 rows; hard-pinned | [scalar heatmap](docs/topology-matrix/linux-runs/amd-epyc-7702p-20260715/scalar-heatmap.png) · [fixed-8 heatmap](docs/topology-matrix/linux-runs/amd-epyc-7702p-20260715/fixed-8-heatmap.png) · [3D topology heat cube](docs/topology-matrix/linux-runs/amd-epyc-7702p-20260715/topology-voxel-cube.png) · [raw CSV](docs/topology-matrix/linux-runs/amd-epyc-7702p-20260715/results.csv) · [median summary](docs/topology-matrix/linux-runs/amd-epyc-7702p-20260715/summary.json) · [metadata](docs/topology-matrix/linux-runs/amd-epyc-7702p-20260715/metadata.json) · [width chart](docs/topology-matrix/linux-runs/amd-epyc-7702p-20260715/width-depth.png) |
-| AMD EPYC 7702 | all 256 allowed logical CPUs; `256 × 255 = 65,280` ordered paths | Scalar | complete; 326,400 rows; hard-pinned | [scalar heatmap](docs/topology-matrix/linux-runs/amd-epyc-7702-20260715-145148/scalar-heatmap.png) · [3D topology heat cube](docs/topology-matrix/linux-runs/amd-epyc-7702-20260715-145148/topology-voxel-cube.png) · [raw CSV](docs/topology-matrix/linux-runs/amd-epyc-7702-20260715-145148/results.csv) · [median summary](docs/topology-matrix/linux-runs/amd-epyc-7702-20260715-145148/summary.json) · [metadata](docs/topology-matrix/linux-runs/amd-epyc-7702-20260715-145148/metadata.json) · [width chart](docs/topology-matrix/linux-runs/amd-epyc-7702-20260715-145148/width-depth.png) |
+| System | Coverage | Artifacts |
+|---|---|---|
+| Intel Xeon E5-2630L v3 | All 32 logical CPUs; scalar plus fixed widths 1–8. Six scalar CPU 16–18 paths use stable 48-round replacements; all other cells use isolated 12-round measurements. | [Topology Explorer](https://andersc.github.io/fastqueue2/topology-matrix/) · [scalar heatmap](docs/topology-matrix/linux-runs/fq-topology-f061-20260727-211436/scalar-heatmap.png) · [fixed-8 heatmap](docs/topology-matrix/linux-runs/fq-topology-f061-20260727-211436/fixed-8-heatmap.png) · [3D topology heat cube](docs/topology-matrix/linux-runs/fq-topology-f061-20260727-211436/topology-voxel-cube.png) · [raw CSV](docs/topology-matrix/linux-runs/fq-topology-f061-20260727-211436/results.csv) · [median summary](docs/topology-matrix/linux-runs/fq-topology-f061-20260727-211436/summary.json) |
 
-`Intel Xeon E5-2630L v3` isolated campaign validation: 107,136 rows = 992 directed paths × scalar plus
-fixed widths 1–8 × 12 timed rounds; every row has `pinned=1` and finite positive
-throughput. Every path×mode cell has exactly 12 samples; producer/consumer/width/round
-keys are unique. Timed samples target at least 250 ms after calibration. Run provenance
-records `performance` governor, SCHED_RR priority 10, two warmups, and preflight state.
-Median path×mode throughput spans 2.717–576.867 M items/s (overall median 101.856 M items/s).
-Linux NUMA discovery found node 0 CPUs `0–7,16–23` and node 1 CPUs `8–15,24–31`; dashed
-boundaries in heatmaps and voxel cube mark transitions in displayed CPU order. Raw measurements
-completed before renderer dependency failure; plots were regenerated locally from unchanged CSV.
-
-`Intel Xeon E5-2630L v3` prior full-width validation: 44,640 rows = 992 directed paths × scalar plus
-fixed widths 1–8 × five timed rounds; every row has `pinned=1` and finite positive
-throughput. Original measurements incident to CPUs 3 or 19 showed CPU-3 external-workload
-contention. All 5,490 incident rows (122 paths × nine modes × five rounds) were replaced
-with a clean matching-settings rerun after known unrestricted workloads were moved off both
-target CPUs; untouched paths retain original raw samples. Its 8,928 path×mode medians drive one
-exact semi-transparent cube cell per measured producer × consumer × layer. Previous scalar-only
-archive remains preserved separately.
-
-`AMD EPYC 7702P` validation: 162,560 rows = 16,256 directed paths × two modes (scalar,
-fixed width 8) × five timed rounds; every row has `pinned=1` and positive
-throughput. Its median summary contains 32,512 path×mode entries. Published
-artifacts contain no public host identifier.
-
-`AMD EPYC 7702` validation: 326,400 rows = 65,280 directed paths × scalar width × five
-timed rounds; every row has `pinned=1` and positive throughput. Its median
-summary contains 65,280 path×width entries. Raw-sample median throughput is
-22.174 M items/s (range 12.558–397.337). Fixed width remains excluded because
-this CPU's width-8 probe returned invalid pin/rate data.
-
-`--transfers` is calibration work, not necessarily timed work when
-`--min-sample-ms` is nonzero. Each CSV row records `effective_transfers` and
-`calibration_millis`; rate calculation uses effective work. Workers signal
-that affinity setup completed before timing begins. Exact FIFO validation runs
-for every transfer in calibration, warmup, and timed samples.
+Explorer exposes one canonical dataset per system. It renders each exact measured cell; no CPU values are averaged, inferred, or smoothed. Dataset provenance lives in linked metadata, not Explorer controls.
 
 ### Matrix count and reliability tradeoff
 

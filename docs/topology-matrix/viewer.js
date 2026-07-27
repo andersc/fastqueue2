@@ -21,7 +21,7 @@ async function loadRun() {
   const widths = [...new Set(rows.map(r => +r.width))].sort((a,b)=>a-b);
   $('width').replaceChildren(...widths.map(w => new Option(labelWidth(w), w)), new Option('all widths (3D layers)', 'all'));
   updateWidthControl();
-  $('subtitle').textContent = `${run.label} · ${rows.length.toLocaleString()} exact directed path×mode medians · ${meta.placement_confidence || 'placement details in metadata'}`;
+  $('subtitle').textContent = `${run.label} · ${rows.length.toLocaleString()} exact measured path×mode medians`;
   setLinks(); selected = null; render();
 }
 function valuesForWidth(width) { return rows.filter(r => +r.width === +width); }
