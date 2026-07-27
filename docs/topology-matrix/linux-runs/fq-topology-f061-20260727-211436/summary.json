@@ -1,0 +1,50 @@
+[
+  {
+    "producer_cpu": 16,
+    "consumer_cpu": 17,
+    "width": 0,
+    "median_mps": 382.211695816,
+    "sample_count": 48,
+    "all_pinned": true
+  },
+  {
+    "producer_cpu": 16,
+    "consumer_cpu": 18,
+    "width": 0,
+    "median_mps": 377.0817300515,
+    "sample_count": 48,
+    "all_pinned": true
+  },
+  {
+    "producer_cpu": 17,
+    "consumer_cpu": 16,
+    "width": 0,
+    "median_mps": 394.35752669249996,
+    "sample_count": 48,
+    "all_pinned": true
+  },
+  {
+    "producer_cpu": 17,
+    "consumer_cpu": 18,
+    "width": 0,
+    "median_mps": 354.468694058,
+    "sample_count": 48,
+    "all_pinned": true
+  },
+  {
+    "producer_cpu": 18,
+    "consumer_cpu": 16,
+    "width": 0,
+    "median_mps": 385.1238157475,
+    "sample_count": 48,
+    "all_pinned": true
+  },
+  {
+    "producer_cpu": 18,
+    "consumer_cpu": 17,
+    "width": 0,
+    "median_mps": 368.454922404,
+    "sample_count": 48,
+    "all_pinned": true
+  }
+]

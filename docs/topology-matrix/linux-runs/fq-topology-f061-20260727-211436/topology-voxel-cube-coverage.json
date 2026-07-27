@@ -1,0 +1,69 @@
+{
+  "rendering": "One semi-transparent voxel per measured producer \u00d7 consumer \u00d7 mode cell; no CPU bins or aggregate medians.",
+  "cpu_order": [
+    16,
+    17,
+    18
+  ],
+  "topology_domains": {
+    "kind": "NUMA node",
+    "source": "Linux sysfs node*/cpulist",
+    "domains": [
+      {
+        "id": 0,
+        "cpus": [
+          16,
+          17,
+          18
+        ]
+      },
+      {
+        "id": 1,
+        "cpus": []
+      }
+    ]
+  },
+  "domain_boundaries_in_cpu_order": [],
+  "widths": [
+    0
+  ],
+  "measured_cell_count": 6,
+  "cells": [
+    {
+      "producer_cpu": 16,
+      "consumer_cpu": 17,
+      "width": 0,
+      "median_mps": 382.211695816
+    },
+    {
+      "producer_cpu": 16,
+      "consumer_cpu": 18,
+      "width": 0,
+      "median_mps": 377.0817300515
+    },
+    {
+      "producer_cpu": 17,
+      "consumer_cpu": 16,
+      "width": 0,
+      "median_mps": 394.35752669249996
+    },
+    {
+      "producer_cpu": 17,
+      "consumer_cpu": 18,
+      "width": 0,
+      "median_mps": 354.468694058
+    },
+    {
+      "producer_cpu": 18,
+      "consumer_cpu": 16,
+      "width": 0,
+      "median_mps": 385.1238157475
+    },
+    {
+      "producer_cpu": 18,
+      "consumer_cpu": 17,
+      "width": 0,
+      "median_mps": 368.454922404
+    }
+  ]
+}

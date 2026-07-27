@@ -10,7 +10,7 @@ function domainMap() {
   const found = meta.topology_domains?.domains || [];
   return new Map(found.flatMap(d => (d.cpus || []).map(cpu => [+cpu, String(d.id)])));
 }
-function cpuOrder() { return (meta.allowed_cpus || [...new Set(rows.flatMap(r => [+r.producer_cpu, +r.consumer_cpu]))]).map(Number).sort((a,b)=>a-b); }
+function cpuOrder() { return (meta.selected_cpus || [...new Set(rows.flatMap(r => [+r.producer_cpu, +r.consumer_cpu]))]).map(Number).sort((a,b)=>a-b); }
 function domainBoundaries(cpus, domains) { return d3.range(1, cpus.length).filter(i => domains.get(cpus[i]) !== domains.get(cpus[i - 1])); }
 function labelWidth(w) { return +w === 0 ? 'scalar' : `fixed width ${w}`; }
 function setLinks() { const base = rootFor(run.id); $('raw-link').href=`${base}/results.csv`; $('summary-link').href=`${base}/summary.json`; $('metadata-link').href=`${base}/metadata.json`; }
