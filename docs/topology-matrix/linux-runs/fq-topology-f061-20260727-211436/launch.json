@@ -1,7 +1,0 @@
-{
-  "dataset": "consolidated canonical E5-2630L system matrix",
-  "source_runs": [
-    "intel-xeon-e5-2630l-v3-20260719-182849",
-    "fq-topology-f061-20260727-211436"
-  ]
-}

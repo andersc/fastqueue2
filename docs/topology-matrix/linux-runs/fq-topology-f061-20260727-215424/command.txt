@@ -1,0 +1,1 @@
+cd /tmp/fq-topology-f061-20260727-215424/src && python3 tools/run_topology_matrix.py --max-cpus 0 --transfers 2162160 --min-sample-ms 500 --rounds 12 --warmups 2 --3d-max-cpus 0 --skip-render --out /tmp/fq-topology-f061-20260727-215424/artifacts

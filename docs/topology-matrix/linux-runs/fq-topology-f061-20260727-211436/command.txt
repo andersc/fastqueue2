@@ -1,1 +1,0 @@
-Consolidated canonical E5-2630L dataset: 12-round full matrix with scalar CPU 16–18 cells replaced by 48-round stability rerun samples. See metadata.json provenance.
