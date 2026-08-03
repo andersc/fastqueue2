@@ -3,6 +3,10 @@
     {
       "id": "fq-topology-f061-20260727-215424",
       "label": "Intel Xeon E5-2630L v3"
+    },
+    {
+      "id": "fq-topology-f177-20260727-213450",
+      "label": "AMD EPYC 7702P"
     }
   ]
 }
