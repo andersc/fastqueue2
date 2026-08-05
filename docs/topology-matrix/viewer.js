@@ -27,9 +27,8 @@ async function loadRun() {
 function valuesForWidth(width) { return rows.filter(r => +r.width === +width); }
 function allWidthsSelected() { return $('width').value === 'all'; }
 function updateWidthControl() {
-  const matrix = $('scene-view').value === 'matrix', all = $('width').querySelector('option[value=all]');
-  all.disabled = !matrix;
-  if (!matrix && allWidthsSelected()) $('width').value = String(Math.min(...rows.map(r => +r.width)));
+  const all = $('width').querySelector('option[value=all]');
+  all.disabled = false;
 }
 function render() {
   updateWidthControl();
@@ -53,38 +52,14 @@ function drawHeatmap(cpus, domains, data, color) {
   axis(g.append('g'),false); axis(g.append('g'),true);
 }
 function drawScene(cpus, domains, data, color, allWidths) {
-  const matrix = $('scene-view').value === 'matrix', points = allWidths || $('scene-matrix-style').value === 'points';
-  $('scene-paths-label').hidden = matrix;
-  $('scene-matrix-style-label').hidden = !matrix;
+  const points = allWidths || $('scene-matrix-style').value === 'points';
   $('scene-matrix-style').disabled = allWidths;
-  $('scene-title').childNodes[0].textContent = matrix ? '3D throughput heatmap ' : '3D topology explorer ';
-  $('scene-note').textContent = matrix
-    ? (allWidths ? 'Scientific 3D matrix layers: consumer CPU is X, producer CPU is Z, and vertical layers are scalar then fixed widths 1–8. Every flat point is one exact measured cell; missing cells/layers stay empty.' : `Scientific 3D matrix: consumer CPU is X, producer CPU is Z. Exact selected-mode median controls color${points ? '; points stay on plane' : ' and bar height'}. This is not a smoothed surface.`)
-    : 'Topology links use deterministic domain rings, not physical motherboard geometry. Every visible arc is one selected, measured directed path.';
-  $('scene-help').textContent = matrix
-    ? `Drag to orbit. Scroll or pinch to zoom. Hover a ${allWidths ? 'layer point' : points ? 'point' : 'bar'} for its exact directed-path median and width; click to select it. Diagonal and missing measurements are absent. Display filter hides cells only—viewer never aggregates or invents values.`
-    : 'Drag to orbit. Scroll or pinch to zoom. Hover an arc for exact selected-mode median; click it to select same producer → consumer path. Display filter reduces drawn links only—values remain unaggregated.';
-  if (matrix) drawMatrixScene(cpus, domains, data, color, points, allWidths); else drawLinksScene(cpus, domains, data, color);
-}
-function drawLinksScene(cpus, domains, data, color) {
- const host=$('scene'); stopScene(); hideTip(); host.replaceChildren();
- if (!window.THREE || !webglAvailable()) { sceneFallback(host); return; }
- const W=Math.max(320,host.clientWidth), H=470, renderer=createRenderer(W,H);
- if (!renderer) { sceneFallback(host); return; }
- const scene=new THREE.Scene(), camera=new THREE.PerspectiveCamera(45,W/H,.1,200);
- host.append(renderer.domElement); camera.position.set(0,0,22);
- const group=new THREE.Group(); scene.add(group); const domIds=[...new Set(cpus.map(c=>domains.get(c)||'unknown'))], byDomain=new Map(domIds.map(id=>[id,cpus.filter(c=>(domains.get(c)||'unknown')===id)])), positions=new Map();
- [...byDomain.entries()].forEach(([id, list], di)=>{const orbit=di===0?5.3:8.2+di*1.5, offset=(di/domIds.length)*Math.PI*2; list.forEach((cpu,i)=>{const a=offset+i*Math.PI*2/list.length, z=(di-(domIds.length-1)/2)*1.9; positions.set(cpu,new THREE.Vector3(Math.cos(a)*orbit,Math.sin(a)*orbit,z));});});
- const nodeGeo=new THREE.SphereGeometry(.18,12,9); cpus.forEach(cpu=>{const mat=new THREE.MeshBasicMaterial({color:new THREE.Color('#9eeaff')}); const node=new THREE.Mesh(nodeGeo,mat); node.position.copy(positions.get(cpu)); group.add(node);});
- const filter=$('scene-paths').value, candidates=[...data.values()].filter(r=>{const p=+r.producer_cpu,c=+r.consumer_cpu,same=domains.get(p)===domains.get(c); return filter==='selected'?selected&&selected.p===p&&selected.c===c:filter==='local'?same:filter==='remote'?!same:true;}).sort((a,b)=>+b.median_mps-+a.median_mps); const display=filter==='top'?candidates.slice(0,500):candidates.slice(0,1200), links=[];
- display.forEach(r=>{const p=+r.producer_cpu,c=+r.consumer_cpu,a=positions.get(p),b=positions.get(c); if(!a||!b)return; const mid=a.clone().add(b).multiplyScalar(.5); mid.z+=.65+Math.min(3,(+r.median_mps)/120); const curve=new THREE.QuadraticBezierCurve3(a,mid,b), pts=curve.getPoints(16), geo=new THREE.BufferGeometry().setFromPoints(pts), mat=new THREE.LineBasicMaterial({color:color(+r.median_mps),transparent:true,opacity:.58}); const line=new THREE.Line(geo,mat); line.userData={r,p,c,pts}; group.add(line); links.push(line); });
- const labels=document.createElement('div'); labels.setAttribute('aria-hidden','true'); host.append(labels); let yaw=.22,pitch=-.45,dist=22,drag,spin=false,reduced=matchMedia('(prefers-reduced-motion: reduce)').matches, hovered;
- function project(v){const q=v.clone().applyMatrix4(group.matrixWorld).project(camera); return {x:(q.x*.5+.5)*W,y:(-q.y*.5+.5)*H,visible:q.z<1};} function labelNodes(){labels.replaceChildren(); if(cpus.length>64)return; cpus.forEach(cpu=>{const q=project(positions.get(cpu)); if(!q.visible)return; const el=document.createElement('span');el.className='scene-label';el.style.left=`${q.x}px`;el.style.top=`${q.y}px`;el.textContent=`CPU ${cpu}`;labels.append(el);});}
- function pose(){camera.position.set(dist*Math.cos(pitch)*Math.sin(yaw),dist*Math.sin(pitch),dist*Math.cos(pitch)*Math.cos(yaw));camera.lookAt(0,0,0);camera.updateMatrixWorld();group.updateMatrixWorld();} let animationFrame; function frame(){if(spin&&!reduced)yaw+=.0025;pose();renderer.render(scene,camera);labelNodes();animationFrame=requestAnimationFrame(frame);} frame();
- function pointerToNdc(event) { const rect=renderer.domElement.getBoundingClientRect(); return new THREE.Vector2(((event.clientX-rect.left)/rect.width)*2-1,-((event.clientY-rect.top)/rect.height)*2+1); }
- renderer.domElement.addEventListener('pointerdown',e=>{hideTip();drag=[e.clientX,e.clientY];renderer.domElement.setPointerCapture(e.pointerId);}); renderer.domElement.addEventListener('pointermove',e=>{if(drag){hideTip();yaw+=(e.clientX-drag[0])*.008;pitch=Math.max(-1.3,Math.min(1.3,pitch+(e.clientY-drag[1])*.008));drag=[e.clientX,e.clientY];return;} const mouse=pointerToNdc(e), ray=new THREE.Raycaster();ray.setFromCamera(mouse,camera); const hit=ray.intersectObjects(links)[0]; if(hit){hovered=hit.object.userData;showTip(e,hovered.r,hovered.p,hovered.c,domains);}else {hovered=null;hideTip();}}); renderer.domElement.addEventListener('pointerleave',()=>{hovered=null;hideTip();}); renderer.domElement.addEventListener('pointerup',()=>{drag=null;}); renderer.domElement.addEventListener('pointercancel',()=>{drag=null;hideTip();}); renderer.domElement.addEventListener('click',()=>{if(hovered){selected={p:hovered.p,c:hovered.c};drawComparison();}}); renderer.domElement.addEventListener('wheel',e=>{e.preventDefault();dist=Math.max(9,Math.min(45,dist+e.deltaY*.012));},{passive:false});
- $('scene-home').onclick=()=>{yaw=.22;pitch=-.45;dist=22;}; $('scene-spin').onclick=e=>{spin=!spin;e.currentTarget.setAttribute('aria-pressed',spin);}; $('scene-motion').onclick=e=>{reduced=!reduced;if(reduced)spin=false;e.currentTarget.setAttribute('aria-pressed',reduced);$('scene-spin').setAttribute('aria-pressed',spin);};
- stopScene=()=>{cancelAnimationFrame(animationFrame); hideTip(); renderer.dispose(); nodeGeo.dispose(); links.forEach(line=>{line.geometry.dispose();line.material.dispose();}); host.replaceChildren(); stopScene=()=>{};};
+  $('scene-title').childNodes[0].textContent = '3D throughput heatmap ';
+  $('scene-note').textContent = allWidths
+    ? 'Scientific 3D matrix layers: consumer CPU is X, producer CPU is Z, and vertical layers are scalar then fixed widths 1–8. Every flat point is one exact measured cell; missing cells/layers stay empty.'
+    : `Scientific 3D matrix: consumer CPU is X, producer CPU is Z. Exact selected-mode median controls color${points ? '; points stay on plane' : ' and bar height'}. This is not a smoothed surface.`;
+  $('scene-help').textContent = `Drag to orbit. Ctrl/⌘ + drag to pan. Scroll or pinch to zoom. Hover a ${allWidths ? 'layer point' : points ? 'point' : 'bar'} for its exact directed-path median and width; click to select it. Diagonal and missing measurements are absent. Display filter hides cells only—viewer never aggregates or invents values.`;
+  drawMatrixScene(cpus, domains, data, color, points, allWidths);
 }
 function drawMatrixScene(cpus, domains, data, color, points, allWidths) {
  const host=$('scene'); stopScene(); hideTip(); host.replaceChildren();
@@ -99,13 +74,13 @@ function drawMatrixScene(cpus, domains, data, color, points, allWidths) {
  const index=new Map(cpus.map((cpu,i)=>[cpu,i])), marks=points ? makeMatrixPoints(cells, index, side, pitch, color, allWidths ? layers : null) : makeMatrixBars(cells, index, side, pitch, lo, span, color); scene.add(marks);
  const floor=new THREE.GridHelper(Math.max(14,side*pitch),Math.min(side,64),0x365477,0x1a3551); floor.position.y=0; scene.add(floor);
  const frameHeight=allWidths ? layerHeight : 7.3, frame=new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(Math.max(14,side*pitch),frameHeight,Math.max(14,side*pitch))),new THREE.LineBasicMaterial({color:0x6fa6d6,transparent:true,opacity:.6})); frame.position.y=frameHeight/2; scene.add(frame);
- const labels=document.createElement('div'); labels.setAttribute('aria-hidden','true'); host.append(labels); let yaw=.65,pitchAngle=-.62,dist=22,drag,spin=false,reduced=matchMedia('(prefers-reduced-motion: reduce)').matches,hovered,animationFrame;
- const focusY=allWidths ? layerHeight/2 : 2;
- function pose(){camera.position.set(dist*Math.cos(pitchAngle)*Math.sin(yaw),dist*Math.sin(pitchAngle)+focusY+1,dist*Math.cos(pitchAngle)*Math.cos(yaw));camera.lookAt(0,focusY,0);camera.updateMatrixWorld();}
+ const labels=document.createElement('div'); labels.setAttribute('aria-hidden','true'); host.append(labels); let yaw=.65,pitchAngle=-.62,dist=22,drag,dragged=false,spin=false,reduced=matchMedia('(prefers-reduced-motion: reduce)').matches,hovered,animationFrame;
+ const focusY=allWidths ? layerHeight/2 : 2, target=new THREE.Vector3(0,focusY,0);
+ function pose(){camera.position.set(target.x+dist*Math.cos(pitchAngle)*Math.sin(yaw),target.y+dist*Math.sin(pitchAngle)+1,target.z+dist*Math.cos(pitchAngle)*Math.cos(yaw));camera.lookAt(target);camera.updateMatrixWorld();}
  function frameLoop(){if(spin&&!reduced)yaw+=.0025;pose();renderer.render(scene,camera);animationFrame=requestAnimationFrame(frameLoop);} frameLoop();
  function pointerToNdc(e){const rect=renderer.domElement.getBoundingClientRect();return new THREE.Vector2(((e.clientX-rect.left)/rect.width)*2-1,-((e.clientY-rect.top)/rect.height)*2+1);}
- renderer.domElement.addEventListener('pointerdown',e=>{hideTip();drag=[e.clientX,e.clientY];renderer.domElement.setPointerCapture(e.pointerId);}); renderer.domElement.addEventListener('pointermove',e=>{if(drag){hideTip();yaw+=(e.clientX-drag[0])*.008;pitchAngle=Math.max(-1.53,Math.min(1.53,pitchAngle+(e.clientY-drag[1])*.008));drag=[e.clientX,e.clientY];return;}const ray=new THREE.Raycaster();ray.setFromCamera(pointerToNdc(e),camera);const hit=ray.intersectObject(marks,true)[0];if(hit){hovered=hit.object.userData.cells[Math.floor(hit.faceIndex/12)];showTip(e,hovered,+hovered.producer_cpu,+hovered.consumer_cpu,domains);}else{hovered=null;hideTip();}}); renderer.domElement.addEventListener('pointerleave',hideTip); renderer.domElement.addEventListener('pointerup',()=>drag=null); renderer.domElement.addEventListener('pointercancel',()=>{drag=null;hideTip();}); renderer.domElement.addEventListener('click',()=>{if(hovered){selected={p:+hovered.producer_cpu,c:+hovered.consumer_cpu};drawComparison();}});renderer.domElement.addEventListener('wheel',e=>{e.preventDefault();dist=Math.max(10,Math.min(55,dist+e.deltaY*.012));},{passive:false});
- $('scene-home').onclick=()=>{yaw=.65;pitchAngle=-.62;dist=22;}; $('scene-spin').onclick=e=>{spin=!spin;e.currentTarget.setAttribute('aria-pressed',spin);}; $('scene-motion').onclick=e=>{reduced=!reduced;if(reduced)spin=false;e.currentTarget.setAttribute('aria-pressed',reduced);$('scene-spin').setAttribute('aria-pressed',spin);};
+ renderer.domElement.addEventListener('pointerdown',e=>{hideTip();drag={x:e.clientX,y:e.clientY,pan:e.ctrlKey||e.metaKey};dragged=false;renderer.domElement.setPointerCapture(e.pointerId);}); renderer.domElement.addEventListener('pointermove',e=>{if(drag){hideTip();const dx=e.clientX-drag.x,dy=e.clientY-drag.y;dragged ||= Math.abs(dx)+Math.abs(dy)>2;if(drag.pan){const rect=renderer.domElement.getBoundingClientRect(), scale=dist/Math.min(rect.width,rect.height), forward=target.clone().sub(camera.position).normalize(), right=new THREE.Vector3().crossVectors(forward,camera.up).normalize(), up=new THREE.Vector3().crossVectors(right,forward).normalize();target.addScaledVector(right,-dx*scale).addScaledVector(up,dy*scale);}else{yaw+=dx*.008;pitchAngle=Math.max(-1.53,Math.min(1.53,pitchAngle+dy*.008));}drag.x=e.clientX;drag.y=e.clientY;return;}const ray=new THREE.Raycaster();ray.setFromCamera(pointerToNdc(e),camera);const hit=ray.intersectObject(marks,true)[0];if(hit){hovered=hit.object.userData.cells[Math.floor(hit.faceIndex/12)];showTip(e,hovered,+hovered.producer_cpu,+hovered.consumer_cpu,domains);}else{hovered=null;hideTip();}}); renderer.domElement.addEventListener('pointerleave',hideTip); renderer.domElement.addEventListener('pointerup',()=>drag=null); renderer.domElement.addEventListener('pointercancel',()=>{drag=null;hideTip();}); renderer.domElement.addEventListener('contextmenu',e=>{if(e.ctrlKey)e.preventDefault();}); renderer.domElement.addEventListener('click',()=>{if(!dragged&&hovered){selected={p:+hovered.producer_cpu,c:+hovered.consumer_cpu};drawComparison();}});renderer.domElement.addEventListener('wheel',e=>{e.preventDefault();dist=Math.max(10,Math.min(55,dist+e.deltaY*.012));},{passive:false});
+ $('scene-home').onclick=()=>{yaw=.65;pitchAngle=-.62;dist=22;target.set(0,focusY,0);}; $('scene-spin').onclick=e=>{spin=!spin;e.currentTarget.setAttribute('aria-pressed',spin);}; $('scene-motion').onclick=e=>{reduced=!reduced;if(reduced)spin=false;e.currentTarget.setAttribute('aria-pressed',reduced);$('scene-spin').setAttribute('aria-pressed',spin);};
  stopScene=()=>{cancelAnimationFrame(animationFrame);hideTip();marks.traverse(mark=>{mark.geometry?.dispose();mark.material?.dispose();});floor.geometry.dispose();floor.material.dispose();frame.geometry.dispose();frame.material.dispose();renderer.dispose();host.replaceChildren();stopScene=()=>{};};
 }
 function createRenderer(width,height) {
@@ -160,5 +135,5 @@ function drawComparison() {
  svg.append('g').selectAll('rect').data(rs).join('rect').attr('x',r=>x(+r.width)).attr('y',r=>y(+r.median_mps)).attr('width',x.bandwidth()).attr('height',r=>y(0)-y(+r.median_mps)).attr('fill',r=>rainbow((+r.median_mps)/max)); svg.append('g').attr('transform',`translate(0,${H-m.bottom})`).call(d3.axisBottom(x).tickFormat(labelWidth)); svg.append('g').attr('transform',`translate(${m.left},0)`).call(d3.axisLeft(y).ticks(4));
  $('details').innerHTML=`<dt>Path</dt><dd>CPU ${selected.p} → CPU ${selected.c}</dd><dt>Domain</dt><dd>${domainMap().get(selected.p)===domainMap().get(selected.c)?'same NUMA domain':'cross-NUMA / interconnect'}</dd><dt>Value</dt><dd>${allWidthsSelected() ? 'See selected 3D layer point' : (+rs.find(r=>+r.width===+$('width').value)?.median_mps).toFixed(3)+' M items/s'}</dd>`;
 }
-async function start() { try { catalog=await json('viewer-runs.json'); $('run').replaceChildren(...catalog.runs.map(r=>new Option(r.label,r.id))); for(const id of ['run','width','scale','filter','scene-paths','scene-view','scene-matrix-style']) $(id).addEventListener('change', id==='run'?loadRun:render); await loadRun(); } catch(e) { $('subtitle').textContent=`Viewer failed: ${e.message}. Use HTTPS GitHub Pages, not file://.`; console.error(e); } }
+async function start() { try { catalog=await json('viewer-runs.json'); $('run').replaceChildren(...catalog.runs.map(r=>new Option(r.label,r.id))); for(const id of ['run','width','scale','filter','scene-matrix-style']) $(id).addEventListener('change', id==='run'?loadRun:render); await loadRun(); } catch(e) { $('subtitle').textContent=`Viewer failed: ${e.message}. Use HTTPS GitHub Pages, not file://.`; console.error(e); } }
 start();

@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>FastQueue topology explorer</title>
+  <title>FastQueue2 topology explorer</title>
   <link rel="stylesheet" href="viewer.css">
   <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
   <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
@@ -11,7 +11,7 @@
 </head>
 <body>
   <header>
-    <h1>FastQueue topology explorer</h1>
+    <h1>FastQueue2 topology explorer</h1>
     <p id="subtitle">Loading measured directed-path medians…</p>
   </header>
   <main>
@@ -23,9 +23,9 @@
     </section>
     <section class="legend"><span>Slow</span><div id="gradient"></div><span>Fast</span><output id="scale-label"></output></section>
     <section class="scene-section" aria-labelledby="scene-title">
-      <div class="scene-heading"><div><h2 id="scene-title">3D topology explorer <span class="optional">optional WebGL view</span></h2><p id="scene-note" class="note">Topology links use deterministic domain rings, not physical motherboard geometry. Matrix bars map consumer CPU to X, producer CPU to Z, and exact measured throughput to height and color.</p></div><div class="scene-controls"><label>3D view <select id="scene-view"><option value="links">topology flight deck</option><option value="matrix">throughput heatmap</option></select></label><label id="scene-matrix-style-label" hidden>Matrix marks <select id="scene-matrix-style"><option value="bars">height-encoded bars</option><option value="points">flat colored points</option></select></label><label id="scene-paths-label">3D paths <select id="scene-paths"><option value="selected">selected CPU path</option><option value="local">same NUMA domain</option><option value="remote">cross-NUMA / interconnect</option><option value="top">top 500 throughput paths</option></select></label><button id="scene-home" type="button">Home</button><button id="scene-spin" type="button" aria-pressed="false">Auto-rotate</button><button id="scene-motion" type="button" aria-pressed="false">Reduced motion</button></div></div>
+      <div class="scene-heading"><div><h2 id="scene-title">3D throughput heatmap <span class="optional">optional WebGL view</span></h2><p id="scene-note" class="note">Matrix bars map consumer CPU to X, producer CPU to Z, and exact measured throughput to height and color.</p></div><div class="scene-controls"><label>Matrix marks <select id="scene-matrix-style"><option value="bars">height-encoded bars</option><option value="points">flat colored points</option></select></label><button id="scene-home" type="button">Home</button><button id="scene-spin" type="button" aria-pressed="false">Auto-rotate</button><button id="scene-motion" type="button" aria-pressed="false">Reduced motion</button></div></div>
       <div id="scene" class="scene" role="img" aria-label="Optional three-dimensional directed topology view; use 2D heatmap for authoritative accessible data"></div>
-      <p id="scene-help" class="note">Drag to orbit. Scroll or pinch to zoom. Hover a 3D mark for exact selected-mode median; click it to select same producer → consumer path in comparison chart. 3D heatmap bars are exact directed cells: X consumer CPU, Z producer CPU, height and color throughput. Display filters hide cells only—viewer never aggregates or invents values.</p>
+      <p id="scene-help" class="note">Drag to orbit. Ctrl/⌘ + drag to pan. Scroll or pinch to zoom. Hover a 3D mark for exact selected-mode median; click it to select same producer → consumer path in comparison chart. 3D heatmap bars are exact directed cells: X consumer CPU, Z producer CPU, height and color throughput. Display filters hide cells only—viewer never aggregates or invents values.</p>
     </section>
     <section class="layout">
       <article>
