@@ -64,7 +64,7 @@ function drawScene(cpus, domains, data, color, allWidths) {
 function drawMatrixScene(cpus, domains, data, color, points, allWidths) {
  const host=$('scene'); stopScene(); hideTip(); host.replaceChildren();
  if (!window.THREE || !webglAvailable()) { sceneFallback(host); return; }
- const W=Math.max(320,host.clientWidth),H=470,renderer=createRenderer(W,H);
+ const W=Math.max(320,host.clientWidth),H=705,renderer=createRenderer(W,H);
  if (!renderer) { sceneFallback(host); return; }
  const scene=new THREE.Scene(),camera=new THREE.PerspectiveCamera(42,W/H,.1,300);
  host.append(renderer.domElement);
