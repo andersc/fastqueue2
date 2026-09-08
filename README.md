@@ -71,6 +71,44 @@ See the original FastQueue (the link above).
 **fast_queue_arm64.h** / **fast_queue_x86_64.h**
 
 
+## The need for speed
+
+Fast numbers are easy to get. Trustworthy numbers are harder.
+
+I learned this when a queue looked fastest mainly because it ran first, while CPU
+was cool and boosting. Another test allocated and freed every message, so it
+mostly measured memory allocator instead of queue.
+
+Current benchmark keeps comparison simple:
+
+- Allocate payloads before timer starts.
+- Rotate queue order each round.
+- Start producer and consumer together, then wait for both.
+- Move exact number of items and verify FIFO order.
+- Run 12 rounds and compare medians.
+- On Linux, pin workers to physical cores and use `performance` governor and
+  real-time scheduling where stated.
+
+These are pooled-pointer results. Higher is better. Compare values across same
+row only—different machines are not directly comparable.
+
+| Machine | FastQueue | Deaod | Dro | David V5 |
+| --- | ---: | ---: | ---: | ---: |
+| Apple M5, macOS arm64 | **396.473M** | 165.428M | 77.379M | 154.271M |
+| ARM Cortex-X925 + Cortex-A725, Linux arm64, X925 CPUs 5/6 | 83.678M | 86.346M | **87.382M** | 86.551M |
+| AMD EPYC 7702, Zen2 dual socket, CPUs 1/3 | **123.935M** | 90.443M | 107.959M | 102.075M |
+| AMD EPYC 7702P, Zen2, CPUs 1/3 | **118.629M** | 75.078M | 90.129M | 79.699M |
+| Intel Xeon E5-2630L v3, Haswell, CPUs 1/3 | **117.951M** | 28.725M | 31.869M | 27.067M |
+
+Apple M5 uses scheduler hints because macOS does not provide hard logical-CPU
+pinning. Linux rows use hard-pinned physical cores and
+`g++ -O3 -DNDEBUG -march=native`. Results show what won on these exact machines
+and workloads, not universal queue ranking.
+
+Heap mode is also available, but it includes allocation cost. Use pooled mode to
+measure queue itself. [David V5](https://david.alvarezrosa.com/posts/optimizing-a-lock-free-ring-buffer/)
+comes from David Álvarez Rosa's ring-buffer analysis.
+
 ## Bulk API
 
 `FastQueueBatch<T>` is caller-owned cache-line payload staging, not a
@@ -319,66 +357,8 @@ batches automatically win. Measure each width and ISA on target hardware before
 claims.
 
 
-## The need for speed
+## Benchmark details
 
-A word on measuring first, because it bit me hard: the original benchmark ran
-each queue back-to-back in a fixed order, and on a laptop that means the queue
-that runs **first** gets the cold/turbo advantage and looks fastest. It also does
-`new`/`delete` per message, and that allocator cost (cross-thread free is
-expensive) dominates the loop and hides the queue entirely. So the numbers below
-come from a rewritten benchmark that **rotates the order every round**, reports
-the **median**, and runs two passes: a *heap* pass (new/delete per message, the
-classic FastQueue benchmark, allocator-bound) and a *pooled* pass (pre-allocated
-objects — this is what actually measures the queue).
-
-Pooled pass, fixed transaction count, higher is better, median of 12 rotated rounds.
-Absolute numbers differ by machine, compiler, clocks, and scheduler; compare queues within
-one row.
-
-| Machine | FastQueue | Deaod | Dro | David V5 |
-| --- | ---: | ---: | ---: | ---: |
-| Apple M5, macOS arm64 | **396.473M** | 165.428M | 77.379M | 154.271M |
-| ARM Cortex-X925 + Cortex-A725, Linux arm64, X925 CPUs 5/6 | 83.678M | 86.346M | **87.382M** | 86.551M |
-| AMD EPYC 7702, Zen2 dual socket, CPUs 1/3 | **123.935M** | 90.443M | 107.959M | 102.075M |
-| AMD EPYC 7702P, Zen2, CPUs 1/3 | **118.629M** | 75.078M | 90.129M | 79.699M |
-| Intel Xeon E5-2630L v3, Haswell, CPUs 1/3 | **117.951M** | 28.725M | 31.869M | 27.067M |
-
-### Measurement method
-
-Every table row uses joined workers, atomic start gate, exact transfer count,
-sequence validation, four-way order rotation, pooled pointers, and a 12-round
-median. Compare queues only within one row.
-
-Apple M5 arm64 row uses 5,000,000 fixed transfers. FastQueue is row winner at
-396.473M/s; Deaod is 165.428M/s, David V5 is 154.271M/s, and Dro is 77.379M/s.
-`FQ_ARM_RING_INLINE=1` uses queue-owned contiguous storage with peer-index caches
-and release/acquire publication. The 100,000,000-transfer confirmation measured
-FastQueue 405.951M/s versus Deaod 176.884M/s, David V5 155.166M/s, and Dro
-72.701M/s. macOS affinity is a scheduler hint, not hard physical-core pinning;
-P-core/E-core placement adds variance.
-
-Cortex-X925 Linux row was re-run with 100,000,000 fixed transfers, physical X925
-CPUs 5 and 6, performance governor, `chrt -f 90`, and
-`g++ -O3 -DNDEBUG -march=native`. Host has two 5-core Cortex-X925 clusters
-(CPUs 5–9 and 15–19) plus Cortex-A725 cores (CPUs 0–4 and 10–14); CPUs 5/6 are
-distinct X925 cores in one cluster at 3.9 GHz. Dro wins this workload at
-87.382M/s; David V5, Deaod, and FastQueue measure 86.551M/s, 86.346M/s, and
-83.678M/s. Results are median of 12 rotated rounds from this current run.
-
-Linux x86 rows use pooled pointers, physical-core pinning, performance governor,
-`chrt -f 90`, `g++ -O3 -DNDEBUG -march=native`, exact sequence validation, and
-fixed transfer counts. FastQueue is row winner on all three listed x86 hosts:
-+14.8% versus Dro on dual-socket Zen2, +31.6% on single-socket Zen2, and +270.1%
-on this Haswell. Linux controls improve repeatability; they do not make Linux and
-macOS absolute throughput directly comparable.
-
-David V5 comes from [David Álvarez Rosa's ring-buffer analysis](https://david.alvarezrosa.com/posts/optimizing-a-lock-free-ring-buffer/)
-Results identify row winners only for stated machine/workload conditions, not
-universal #1 across every CPU, compiler, capacity, or latency workload.
-
-Heap pass is allocator-bound. Use pooled objects, rotated order, joined worker
-threads, fixed-work sequence validation, and median distributions for queue
-comparisons.
 ### Per-architecture tuning
 
 `fast_queue_arm64.h` selects an inline contiguous ring by default
@@ -589,22 +569,16 @@ can be only a few milliseconds for fixed width 8. It remains a functional
 artifact, not benchmark evidence. Run calibrated samples as above before
 publishing pair-level conclusions.
 
-Graphs stay separate from README. PNGs are static presentation artifacts; CSV
-remains exact directed-path source. Cube aggregation and coverage are explicit in
-companion JSON.
+Explore measured producer → consumer paths, scalar mode, and fixed batch widths
+`1..8` in the interactive 3D viewer:
 
-- [Scalar API producer → consumer heatmap](docs/topology-matrix/amd-epyc-7702-dual/scalar-heatmap.png)
-- [Fixed batch 8 producer → consumer heatmap](docs/topology-matrix/amd-epyc-7702-dual/fixed-8-heatmap.png)
-- [Scalar/fixed-width distribution](docs/topology-matrix/amd-epyc-7702-dual/width-depth.png)
-- [3D producer × consumer × width voxel cube](docs/topology-matrix/amd-epyc-7702-dual/topology-voxel-cube.png)
-- [Voxel aggregation and coverage](docs/topology-matrix/amd-epyc-7702-dual/topology-voxel-cube-coverage.json)
-- [Raw results CSV](docs/topology-matrix/amd-epyc-7702-dual/results.csv), [median summary JSON](docs/topology-matrix/amd-epyc-7702-dual/summary.json), and [run metadata](docs/topology-matrix/amd-epyc-7702-dual/metadata.json)
+- [FastQueue2 topology explorer](https://andersc.github.io/fastqueue2/topology-matrix/)
 
-Aggregate median rates across all raw samples: Scalar API **299.104 M items/s**;
-Fixed 1 **299.343**; Fixed 2 **351.495**; Fixed 3 **488.654**; Fixed 4
-**789.799**; Fixed 5 **694.877**; Fixed 6 **728.247**; Fixed 7 **734.957**;
-Fixed 8 **891.849**. Use 3D and 2D pair graphs, not aggregate rates alone, for
-placement choice.
+Exact provenance downloads remain available for independent analysis:
+
+- [Raw results CSV](docs/topology-matrix/amd-epyc-7702-dual/results.csv)
+- [Median summary JSON](docs/topology-matrix/amd-epyc-7702-dual/summary.json)
+- [Run metadata](docs/topology-matrix/amd-epyc-7702-dual/metadata.json)
 
 ## Build and run the tests
 
