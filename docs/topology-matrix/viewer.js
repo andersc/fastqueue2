@@ -13,7 +13,7 @@ function domainMap() {
 function cpuOrder() { return (meta.selected_cpus || [...new Set(rows.flatMap(r => [+r.producer_cpu, +r.consumer_cpu]))]).map(Number).sort((a,b)=>a-b); }
 function domainBoundaries(cpus, domains) { return d3.range(1, cpus.length).filter(i => domains.get(cpus[i]) !== domains.get(cpus[i - 1])); }
 function labelWidth(w) { return +w === 0 ? 'scalar' : `fixed width ${w}`; }
-function setLinks() { const base = rootFor(run.id); $('raw-link').href=`${base}/results.csv`; $('summary-link').href=`${base}/summary.json`; $('metadata-link').href=`${base}/metadata.json`; }
+function setLinks() { const base = rootFor(run.id); $('raw-link').href=`${base}/${run.raw || 'results.csv'}`; $('summary-link').href=`${base}/summary.json`; $('metadata-link').href=`${base}/metadata.json`; }
 
 async function loadRun() {
   run = catalog.runs.find(x => x.id === $('run').value);

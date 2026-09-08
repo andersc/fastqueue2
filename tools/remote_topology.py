@@ -205,7 +205,15 @@ echo {out}
         tar.unlink(missing_ok=True)
 
 
-def job_dir(label):
+def job_dir(label, requested=""):
+    if requested:
+        expected_prefix = f"/tmp/fq-topology-{label}-"
+        if not requested.startswith(expected_prefix) or "/" in requested[len(expected_prefix):]:
+            raise SystemExit(f"invalid --run-dir for {label}: {requested}")
+        exists = remote(label, f"test -d {shlex.quote(requested)}", check=False).returncode == 0
+        if not exists:
+            raise SystemExit(f"run directory not found on {label}: {requested}")
+        return requested
     return remote(label, "ls -dt /tmp/fq-topology-" + label + "-* 2>/dev/null | head -1", check=False).stdout.strip()
 
 
@@ -254,7 +262,7 @@ if test "$found" = 0; then echo "NO_ACTIVE_TOPOLOGY_JOB"; fi
 
 def status(args):
     for label in args.hosts:
-        d = job_dir(label)
+        d = job_dir(label, args.run_dir)
         if not d:
             print(f"{label}: no orchestrated run")
             continue
@@ -272,7 +280,7 @@ def harvest(args):
     dest = ROOT / "docs" / "topology-matrix" / "linux-runs"
     dest.mkdir(parents=True, exist_ok=True)
     for label in args.hosts:
-        d = job_dir(label)
+        d = job_dir(label, args.run_dir)
         if not d:
             print(f"{label}: no run")
             continue
@@ -286,7 +294,19 @@ def harvest(args):
         target = dest / Path(d).name
         target.mkdir(exist_ok=True)
         local(["scp", "-r", "-o", "BatchMode=yes", "-o", "ConnectTimeout=12", f"{HOSTS[label]}:{artifacts}/.", str(target)])
-        local(["scp", "-o", "BatchMode=yes", "-o", "ConnectTimeout=12", f"{HOSTS[label]}:{d}/launch.json", f"{HOSTS[label]}:{d}/command.txt", f"{HOSTS[label]}:{d}/isolation-preflight.json", str(target)])
+        provenance_names = (
+            "launch.json", "command.txt", "isolation-preflight.json",
+            "isolation-effective.json", "run-isolated.sh",
+        )
+        available = remote(
+            label,
+            "d=" + shlex.quote(d) + "; for f in " + " ".join(provenance_names) +
+            "; do test -f \"$d/$f\" && echo \"$f\"; done",
+            check=False,
+        ).stdout.split()
+        for name in available:
+            local(["scp", "-o", "BatchMode=yes", "-o", "ConnectTimeout=12",
+                   f"{HOSTS[label]}:{d}/{name}", str(target)])
         runner = ROOT / "tools" / "run_topology_matrix.py"
         local([sys.executable, str(runner), "--render-only", "--out", str(target)])
         print(f"{label}: harvested and rendered {target}")
@@ -296,6 +316,8 @@ def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("action", choices=("launch", "stop", "status", "harvest"))
     p.add_argument("--hosts", nargs="+", choices=sorted(HOSTS), default=sorted(HOSTS))
+    p.add_argument("--run-dir", default="",
+                   help="exact remote run directory for status/harvest; requires one --hosts value")
     p.add_argument("--transfers", type=int, default=720720)
     p.add_argument("--min-sample-ms", type=int, default=100)
     p.add_argument("--rounds", type=int, default=5)
@@ -314,6 +336,10 @@ def main():
     p.add_argument("--producer-cpus", default="", help="comma-separated producer CPUs within --cpus")
     p.add_argument("--consumer-cpus", default="", help="comma-separated consumer CPUs within --cpus")
     a = p.parse_args()
+    if a.run_dir and len(a.hosts) != 1:
+        p.error("--run-dir requires exactly one --hosts value")
+    if a.run_dir and a.action not in ("status", "harvest"):
+        p.error("--run-dir is only valid for status or harvest")
     {"launch": launch, "stop": stop, "status": status, "harvest": harvest}[a.action](a)
 
 if __name__ == "__main__": main()
