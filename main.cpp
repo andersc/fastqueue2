@@ -11,6 +11,9 @@
 
 #if __x86_64__ || _M_X64
 #include "fast_queue_x86_64.h"
+#if defined(FQ_EPYC_SLOT_SIGNAL) && FQ_EPYC_SLOT_SIGNAL
+#include "fast_queue_x86_64_epyc.h"
+#endif
 #define FASTQUEUE_X86 1
 #elif __aarch64__ || _M_ARM64
 #include "fast_queue_arm64.h"
@@ -52,6 +55,17 @@ class MyObject { public: uint64_t mIndex; };
 static_assert(!(POOLED_ONLY && HEAP_ONLY), "Select at most one payload mode");
 #ifndef BULK_BATCH_SIZE
 #define BULK_BATCH_SIZE 0
+#endif
+#ifndef FQ_SCALAR_BLOCKING
+#define FQ_SCALAR_BLOCKING 0
+#endif
+#ifndef FQ_EPYC_SLOT_SIGNAL
+#define FQ_EPYC_SLOT_SIGNAL 0
+#endif
+#if FQ_EPYC_SLOT_SIGNAL
+static_assert(FASTQUEUE_X86, "EPYC slot signaling requires x86_64");
+static_assert(BULK_BATCH_SIZE == 0,
+              "EPYC slot-signaling implementation supports scalar mode only");
 #endif
 static_assert(BULK_BATCH_SIZE >= 0 &&
               BULK_BATCH_SIZE <= static_cast<int>(FastQueueBatch<MyObject*>::max_size),
@@ -198,9 +212,43 @@ static RunResult runDeaod(bool pooled) {
                   [](auto&) {}, pooled);
 }
 
+#ifndef FASTQUEUE_IMPLEMENTATION_LABEL
+#if FQ_EPYC_SLOT_SIGNAL
+#define FASTQUEUE_IMPLEMENTATION_LABEL "EPYC slot-signaling"
+#else
+#define FASTQUEUE_IMPLEMENTATION_LABEL "cached-index"
+#endif
+#endif
+
+#if FQ_EPYC_SLOT_SIGNAL
+using FastQueueType = FastQueueEpyc<MyObject*, QUEUE_MASK, L1_CACHE_LINE>;
+#else
 using FastQueueType = FastQueue<MyObject*, QUEUE_MASK, L1_CACHE_LINE>;
+#endif
 using FastBatch = FastQueueBatch<MyObject*>;
 
+static constexpr const char* fastQueueMode() noexcept {
+#if BULK_BATCH_SIZE == 0
+#if FQ_SCALAR_BLOCKING
+    return "scalar blocking push/pop";
+#else
+    return "scalar nonblocking tryPush/tryPop";
+#endif
+#else
+    return "fixed-width ";
+#endif
+}
+
+static void printFastQueueConfiguration() {
+    std::cout << "FastQueue implementation: " << FASTQUEUE_IMPLEMENTATION_LABEL
+              << "; mode: " << fastQueueMode();
+#if BULK_BATCH_SIZE != 0
+    std::cout << BULK_BATCH_SIZE;
+#endif
+    std::cout << '\n';
+}
+
+#if !FQ_EPYC_SLOT_SIGNAL
 // Batch width N is a compile-time template on the queue, but valid N is bounded by
 // the target batch capacity (8 on x86 / 64-byte-line AArch64, up to 16 on Apple
 // Silicon). Guard each case so widths above the target capacity fold to a no-op
@@ -263,13 +311,22 @@ static std::size_t popBatch(FastQueueType& queue, FastBatch& batch,
     }
 }
 
+#endif
+
 static RunResult runFast(bool pooled) {
     FastQueueType queue;
 #if BULK_BATCH_SIZE == 0
+#if FQ_SCALAR_BLOCKING
+    return runOne(queue,
+                  [](auto& q, auto* object) { q.push(object); },
+                  [](auto& q, auto*& object) { q.pop(object); },
+                  [](auto&) {}, pooled);
+#else
     return runOne(queue,
                   [](auto& q, auto* object) { while (!q.tryPush(object)) {} },
                   [](auto& q, auto*& object) { while (!q.tryPop(object)) {} },
                   [](auto& q) { q.stopQueue(); }, pooled);
+#endif
 #else
     RunControl control;
     std::atomic<uint64_t> consumed{0};
@@ -422,6 +479,7 @@ static void runPass(const char* title, bool pooled) {
 }
 
 int main() {
+    printFastQueueConfiguration();
 #if !POOLED_ONLY
     runPass("Heap payload (allocator bound)", false);
 #endif

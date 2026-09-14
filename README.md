@@ -109,6 +109,47 @@ Heap mode is also available, but it includes allocation cost. Use pooled mode to
 measure queue itself. [David V5](https://david.alvarezrosa.com/posts/optimizing-a-lock-free-ring-buffer/)
 comes from David Álvarez Rosa's ring-buffer analysis.
 
+### Exploring slot signaling on CPUs that benefit from it
+
+FastQueue2 now includes `fast_queue_x86_64_epyc.h`, an experimental, opt-in
+SPSC queue for studying CPUs where each ring slot works better as both payload
+and full/empty signal. The producer waits for a `nullptr` slot and publishes a
+non-null pointer with a release store. The consumer reads it with an acquire
+load, consumes it, then clears the slot with a release store. Logical positions
+are spread across cache lines; BMI1/BMI2 are used for that remapping when the
+compiler enables them.
+
+This can avoid repeatedly sharing cached head and tail indices between cores.
+It is not a universal replacement for the default queue. On the tested Zen2
+EPYC 7702P, slot signaling was 1.59–2.74x faster than cached-index FastQueue2
+for separate cores in the same L3 cluster at capacities 256–65,536. Results
+varied strongly with placement and capacity: cached-index FastQueue2 remained
+faster on SMT siblings, and some small/cross-L3 cases also favored it. Our slot
+implementation tracked upstream AtomicQueue closely across the sweep.
+
+Evidence so far comes only from older Zen2 EPYC systems. The full policy
+sweep above used EPYC 7702P; an earlier AtomicQueue baseline also covered EPYC
+7702. We have no results for newer EPYC generations, so this stays explicit and
+experimental rather than automatically selected. Its narrower contract is x86_64, one producer, one consumer, non-null pointer
+payloads, scalar operations, and a known transfer count; it intentionally has
+no `stopQueue()` lifecycle API. Existing bulk and topology paths continue to
+use the default cached-index queue.
+
+Build the opt-in benchmark target with CMake target `fast_queue2_epyc`. For a
+matched comparison against cached-index FastQueue2 and pinned AtomicQueue
+v1.9.2, use `FastQueueEpycExperiment.cpp` through:
+
+```bash
+python3 tools/run_epyc_experiment.py \
+  --capacities 64,256,1024,4096,65536 \
+  --placements 0:64,0:1,0:4 \
+  --transfers 50000000 --rounds 12 --assembly
+```
+
+The runner rotates queue order, validates FIFO pointers and CPU pinning, writes
+CSV/metadata, and can optionally collect Linux `perf stat` data. Generated
+checkouts and results stay under `/tmp/fq-epyc-experiment` by default.
+
 ## Bulk API
 
 `FastQueueBatch<T>` is caller-owned cache-line payload staging, not a
