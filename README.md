@@ -2,95 +2,50 @@
 
 # FastQueue2
 
-FastQueue2 is a rewrite of [FastQueue](https://github.com/andersc/fastqueue). It supports 8-byte transfers only.
+FastQueue2 is my rewrite of [FastQueue](https://github.com/andersc/fastqueue). It moves 8-byte values between one producer and one consumer.
 
 ## But first
 
-* Is this queue memory efficient?
+* Is it memory efficient? No. I'm after speed, not minimum memory use.
+* Is it “under-synchronized”? Please test that claim instead of guessing. `FastQueueIntegrityTest.cpp` is a starting point; add tests for your own workload too.
+* Why no pointer specialization? The default queue moves any 8-byte value. A pointer is common, but it isn't required. Specializing pointers didn't help in my tests.
 
-	No. This queue aims for speed, not memory efficiency.
-
-* The queue is ‘dramatically under-synchronized’
-
-	Write a test and prove it (you can use FastQueueIntegrityTest.cpp as a boilerplate). Don’t just say stuff out of the blue, prove it!
-
-* Why not use partial specialization for pointers since that's all you support?
-
-	This queue supports the transport of 8 bytes from a producer to a consumer. It might be a pointer and it might not be, so that’s why no specialization is implemented. However, if we gain speed by specializing for pointers, then let’s implement that. I did not see any gain in my tests, and this queue is all about speed.
-
+FastQueue2 is SPSC: **one producer, one consumer**. Neither side may have multiple threads calling into the same queue at once.
 
 ## Background
 
-When I was benchmarking SPSC queues, [deaod’s](https://github.com/Deaod/spsc_queue) and [Dro’s](https://github.com/drogalis/SPSC-Queue/tree/main) were strong baselines. [Rigtorp](https://github.com/rigtorp/SPSCQueue), [Folly](https://github.com/facebook/folly/tree/main), [moodycamel](https://github.com/cameron314/concurrentqueue), and [boost](https://www.boost.org/doc/libs/1_66_0/doc/html/lockfree.html) are other established implementations. My previous attempt ([FastQueue](https://github.com/andersc/fastqueue)) reached the top tier but did not lead every measured workload. It also implements `stopQueue`, which the comparison implementations do not all provide.
+When I started benchmarking SPSC queues, [deaod’s](https://github.com/Deaod/spsc_queue) and [Dro’s](https://github.com/drogalis/SPSC-Queue/tree/main) were tough competition. [Rigtorp](https://github.com/rigtorp/SPSCQueue), [Folly](https://github.com/facebook/folly/tree/main), [moodycamel](https://github.com/cameron314/concurrentqueue), and [boost](https://www.boost.org/doc/libs/1_66_0/doc/html/lockfree.html) are worth knowing too. My earlier [FastQueue](https://github.com/andersc/fastqueue) was fast, but not best in every test. So I narrowed the job: 64-bit x86_64 and arm64 CPUs, one writer, one reader, and 8-byte messages.
 
-This project targets measured use cases rather than universal queue rankings: 64-bit x86_64 and arm64 CPUs, one producer, one consumer, and 8-byte transfers. Pointers are common payloads, but any 8-byte value fits.
-
-In the general SPSC queue implementation there is a circular buffer where push checks whether it’s possible to push an object by looking at the distance between the tail and head pointer/counter. The same goes for popping an object: if there is a distance between tail and head, there is at least one object to pop. That means that if the push runs on one CPU and the pop runs on another CPU, you share the tail/head counters and the object itself between the CPUs.
+A ring buffer wraps around when it reaches its end. Producer and consumer track where to write and read. If they run on different CPUs, keeping those positions in sync can cost more than moving a pointer.
 
 ![Deaod's ring buffer diagram](ring_buffer_concept.png)
 
-*The above picture is taken from Deaod’s repo*
+*Diagram from Deaod’s repo.*
 
-The first version of this queue used the object slot *itself* as the full/empty
-flag: pop cleared the slot to `nullptr`, push waited for `nullptr`. Elegant, and
-it means the CPUs only ever share the object. The problem only shows up when you
-measure the *pure* queue (no per-message malloc masking it): that scheme bounces
-a whole cache line **both** directions for every single element (producer
-publishes the pointer → consumer reads it → consumer writes the `nullptr` back →
-producer reads that back), so it moves an order of magnitude more coherence
-traffic than a packed ring. Against a benchmark dominated by `new`/`delete` it
-looked great; as a raw queue it was several times slower than the titans.
+The first version of FastQueue2 tried a neat shortcut: use each pointer slot as both message and full/empty flag. Producer waited for `nullptr`; consumer cleared the slot after reading. It looked good when the benchmark allocated every message, because allocation hid queue costs. In a test of the queue alone, sending the same cache line back and forth for every item was expensive. I've kept the idea for the separate EPYC experiment below, where some CPU placements really do benefit. It is **not** how the default queue works.
 
-![My ring buffer diagram](ringbuffer.png)
+![Original slot-signaling ring diagram](ringbuffer.png)
 
-So this version keeps FastQueue API (`push`, `pop`, `stopQueue`, 8-byte objects)
-and uses data/control layouts selected per architecture and measured workload:
+The default `FastQueue` now uses **cached indices**. Each side keeps a local copy of the other side's position and checks the shared position when needed. Consumer doesn't clear a slot after reading it. Several pointers can pass through one cache line without sending it back just to say “empty.” Release/acquire operations make publication safe.
 
-* **Cached indices.** Each side keeps a *private* copy of the other side's index
-  and only re-reads the shared atomic when its cache says the queue is full
-  (producer) or empty (consumer). In steady state the producer only writes its
-  own write-index line plus the data; the consumer only writes its own read-index
-  line. The control lines stop ping-ponging.
-* **One-directional, packed data.** The slot is never written back, so a single
-  cache line carries many elements flowing producer → consumer instead of one
-  element bouncing both ways.
-* **x86 throughput profiles.** `-march=znver2` selects wrapped phase indexes plus
-  six-item cushion: measured best Zen2 throughput. Other x86 targets select
-  monotonic indexes plus immediate drain: avoids phase-mask work and batching
-  penalty on Haswell. Both remain user-overridable at compile time.
-* **Architecture-specific ring placement.** `fast_queue_arm64.h` selects queue-owned inline contiguous storage by default (`FQ_ARM_RING_INLINE=1`); define it as `0` to test separately allocated ARM storage. `fast_queue_x86_64.h` keeps ring storage inline. Both layouts preserve control-line isolation. ARM has no compile-time throughput profile; x86 profile selection is described below.
-
-If the tail catches the head there's nothing to pop; if the head catches the tail
-the buffer is full and push waits. Same contract as before, very different cost.
+On x86, `-march=znver2` selects wrapped indices and a six-item consumer cushion, which won in our Zen2 measurements. Other x86 builds use monotonic indices and immediate drain, which worked better on tested Haswell. You can override `FQ_WRAPPED_INDICES` and `FQ_CONSUMER_CUSHION` to test another choice. ARM keeps its ring inside the queue by default (`FQ_ARM_RING_INLINE=1`); setting it to `0` tests separate storage. These are measured choices, not promises for every CPU.
 
 ## Usage
 
-See the original FastQueue (the link above).
-
-(Just copy the header file for your architecture into your project.)
-**fast_queue_arm64.h** / **fast_queue_x86_64.h**
+Copy `fast_queue_x86_64.h` or `fast_queue_arm64.h` into your project. The default API has `push`, `pop`, `tryPush`, `tryPop`, and `stopQueue`. Use one producer thread and one consumer thread. Want to move several pointers at once? See Bulk API below. The opt-in EPYC header has a narrower contract.
 
 
 ## The need for speed
 
-Fast numbers are easy to get. Trustworthy numbers are harder.
+I want a fast queue, but a big number isn't enough. Once I let a benchmark allocate and free every message, it mostly measured the allocator. Running one competitor first can also give it a cooler, faster CPU. Here's how the current pooled-pointer comparison tries to avoid that:
 
-I learned this when a queue looked fastest mainly because it ran first, while CPU
-was cool and boosting. Another test allocated and freed every message, so it
-mostly measured memory allocator instead of queue.
+- Allocate pointers before timing, so we're measuring the queue.
+- Start producer and consumer together; wait for both to finish.
+- Transfer an exact count and check that every pointer arrives in order.
+- Change competitor order each round and use the median of 12 rounds.
+- On Linux, pin workers to physical cores; use the stated governor and real-time settings.
 
-Current benchmark keeps comparison simple:
-
-- Allocate payloads before timer starts.
-- Rotate queue order each round.
-- Start producer and consumer together, then wait for both.
-- Move exact number of items and verify FIFO order.
-- Run 12 rounds and compare medians.
-- On Linux, pin workers to physical cores and use `performance` governor and
-  real-time scheduling where stated.
-
-These are pooled-pointer results. Higher is better. Compare values across same
-row only—different machines are not directly comparable.
+Numbers below are **millions of items per second**, not calls per second. Higher is better. Compare queues *within one row*: different machines aren't directly comparable.
 
 | Machine | FastQueue | Deaod | Dro | David V5 |
 | --- | ---: | ---: | ---: | ---: |
@@ -100,44 +55,19 @@ row only—different machines are not directly comparable.
 | AMD EPYC 7702P, Zen2, CPUs 1/3 | **118.629M** | 75.078M | 90.129M | 79.699M |
 | Intel Xeon E5-2630L v3, Haswell, CPUs 1/3 | **117.951M** | 28.725M | 31.869M | 27.067M |
 
-Apple M5 uses scheduler hints because macOS does not provide hard logical-CPU
-pinning. Linux rows use hard-pinned physical cores and
-`g++ -O3 -DNDEBUG -march=native`. Results show what won on these exact machines
-and workloads, not universal queue ranking.
+This table uses **default cached-index FastQueue**, not the experimental EPYC queue. macOS gives us scheduler affinity *hints*, not hard logical-CPU pinning. Linux rows use hard-pinned physical cores and `g++ -O3 -DNDEBUG -march=native`. These are results for these runs, not a universal league table.
 
-Heap mode is also available, but it includes allocation cost. Use pooled mode to
-measure queue itself. [David V5](https://david.alvarezrosa.com/posts/optimizing-a-lock-free-ring-buffer/)
-comes from David Álvarez Rosa's ring-buffer analysis.
+Heap mode includes allocation cost; pooled mode better isolates the queue. [David V5](https://david.alvarezrosa.com/posts/optimizing-a-lock-free-ring-buffer/) comes from David Álvarez Rosa's ring-buffer analysis.
 
-### Exploring slot signaling on CPUs that benefit from it
+### Trying slot signaling on some CPUs
 
-FastQueue2 now includes `fast_queue_x86_64_epyc.h`, an experimental, opt-in
-SPSC queue for studying CPUs where each ring slot works better as both payload
-and full/empty signal. The producer waits for a `nullptr` slot and publishes a
-non-null pointer with a release store. The consumer reads it with an acquire
-load, consumes it, then clears the slot with a release store. Logical positions
-are spread across cache lines; BMI1/BMI2 are used for that remapping when the
-compiler enables them.
+Remember that first version where `nullptr` meant an empty slot? I'm trying that idea again in `fast_queue_x86_64_epyc.h` as an **opt-in experiment**. Use it only if you can work within its rules: x86_64, one producer, one consumer, non-null pointers, scalar transfers, and a known number of messages. It has no `stopQueue()`; both sides must know when to finish. Default FastQueue2 and its bulk/topology benchmarks still use cached indices.
 
-This can avoid repeatedly sharing cached head and tail indices between cores.
-It is not a universal replacement for the default queue. On the tested Zen2
-EPYC 7702P, slot signaling was 1.59–2.74x faster than cached-index FastQueue2
-for separate cores in the same L3 cluster at capacities 256–65,536. Results
-varied strongly with placement and capacity: cached-index FastQueue2 remained
-faster on SMT siblings, and some small/cross-L3 cases also favored it. Our slot
-implementation tracked upstream AtomicQueue closely across the sweep.
+**Why try it?** Instead of checking shared head/tail positions, producer waits for an empty pointer slot and publishes a non-null pointer. Consumer reads it and clears the slot. Atomic release/acquire operations make the handoff safe. We spread successive logical slots across cache lines, using BMI1/BMI2 index instructions if the compiler enables them. This may help one CPU pairing and hurt another.
 
-Evidence so far comes only from older Zen2 EPYC systems. The full policy
-sweep above used EPYC 7702P; an earlier AtomicQueue baseline also covered EPYC
-7702. We have no results for newer EPYC generations, so this stays explicit and
-experimental rather than automatically selected. Its narrower contract is x86_64, one producer, one consumer, non-null pointer
-payloads, scalar operations, and a known transfer count; it intentionally has
-no `stopQueue()` lifecycle API. Existing bulk and topology paths continue to
-use the default cached-index queue.
+**What did we see?** On older Zen2 EPYC 7702P, with producer and consumer on different cores sharing an L3 cache, it ran **1.59–2.74×** faster than cached-index FastQueue2 at capacities 256–65,536. On SMT siblings (two threads on one core), cached indices won. Some small and cross-L3 cases also favored cached indices. Our slot version generally tracked upstream AtomicQueue closely. An earlier AtomicQueue comparison also covered EPYC 7702; the full slot-policy sweep was on 7702P. We have **no newer EPYC results**, and no reason to switch the default for everyone.
 
-Build the opt-in benchmark target with CMake target `fast_queue2_epyc`. For a
-matched comparison against cached-index FastQueue2 and pinned AtomicQueue
-v1.9.2, use `FastQueueEpycExperiment.cpp` through:
+Want to check your machine? CMake has an opt-in `fast_queue2_epyc` target. This runner compares default FastQueue2, the slot experiment, and pinned AtomicQueue v1.9.2:
 
 ```bash
 python3 tools/run_epyc_experiment.py \
@@ -146,49 +76,46 @@ python3 tools/run_epyc_experiment.py \
   --transfers 50000000 --rounds 12 --assembly
 ```
 
-The runner rotates queue order, validates FIFO pointers and CPU pinning, writes
-CSV/metadata, and can optionally collect Linux `perf stat` data. Generated
-checkouts and results stay under `/tmp/fq-epyc-experiment` by default.
+The runner changes queue order each round, checks FIFO and CPU pinning, and saves CSV and machine details under `/tmp/fq-epyc-experiment` by default. Optional Linux `perf stat` helps investigate *why* one policy wins. Check that the requested CPU numbers mean what you think on your host.
 
 ## Bulk API
 
-`FastQueueBatch<T>` is caller-owned cache-line payload staging, not a
-pointer-plus-length descriptor. `N` is compile-time fixed; hot batch calls pass
-only batch address plus optional retry offset. Keep one batch per
-producer/consumer work context.
+If you want to send multiple 8-byte messages at once, use the Bulk API. Instead of publishing each pointer separately, it can copy a group and publish the new position in one go. That's less handoff work when you already have a group ready. It still has one producer and one consumer; it is **not** the opt-in slot-signaling queue.
 
-* x86 batch storage is `alignas(64)`: eight adjacent 8-byte objects. `N=1..8`.
-* Apple Silicon batch storage is `alignas(128)`: sixteen adjacent 8-byte
-  objects, matching its reported 128-byte data-cache line. `N=1..16`.
-* Other AArch64 targets default to 64 bytes / eight objects. Override
-  `FQ_ARM_BATCH_BYTES` only after confirming target cache-line size.
-
-`offset` retries only an unsent/undrained suffix.
+Here's how to send two pointers. With `Job` defined by your application and a shared `FastQueue<Job*, 1023, 64> queue`, run producer and consumer code in **different threads**. Each thread owns its own batch:
 
 ```cpp
-FastQueueBatch<Job*> jobs{};
-jobs.items[0] = first;
-jobs.items[1] = second;
+// Producer thread:
+FastQueueBatch<Job*> outgoing{};
+outgoing.items[0] = first;
+outgoing.items[1] = second;
+std::size_t sent = 0;
+while (sent < 2) {
+    const auto moved = queue.tryPushBatch<2>(outgoing, sent);
+    sent += moved;
+    if (moved == 0) std::this_thread::yield(); // Full: let consumer run.
+}
 
-const auto pushed = queue.tryPushBatch<2>(jobs);
-const auto popped = queue.tryPopBatch<2>(jobs);
+// Consumer thread (same queue, separate batch):
+FastQueueBatch<Job*> incoming{};
+std::size_t received = 0;
+while (received < 2) {
+    const auto moved = queue.tryPopBatch<2>(incoming, received);
+    received += moved;
+    if (moved == 0) std::this_thread::yield(); // Empty: let producer run.
+}
+// incoming.items[0] and [1] now hold the two messages.
 ```
 
-Each returns exact number moved: zero when full or empty, partial count when
-fewer than requested fit or are available. FIFO holds across scalar and batch
-calls. No blocking batch API exists. Calls may vary width independently: producer
-can request `1`, then `6`, `5`, `3`, `8`; consumer can request different widths.
-On a partial result, retry same requested width with `offset += moved` until its
-suffix is sent or received. Do not reuse or overwrite unsent batch slots before
-that retry completes.
+Include `<thread>` for `std::this_thread::yield()`, or use your application's wait/backpressure policy. Each call is **nonblocking**: it may move two, one, or zero items. `sent` and `received` tell the next call where to continue. Don't overwrite an unsent item; don't read an unfilled receive slot. Producer and consumer can use different widths, and FIFO order also holds if you mix scalar and batch calls.
+
+Width (`<2>` above) is a **compile-time** choice. On x86 and standard 64-byte ARM builds choose 1–8; Apple Silicon defaults to 128-byte batches so choose 1–16. `FastQueueBatch<T>` owns the slots (aligned to 64 or 128 bytes). Change `FQ_ARM_BATCH_BYTES` only after checking your target. There is no pointer-and-length bulk call: if input length changes at runtime, break it into chunks and choose a fixed width for each chunk as below.
+
+**How does it work?** The queue checks available space or data, copies what fits, then publishes the updated index using release/acquire ordering. At the ring's end it splits the copy so it never reads past the buffer. x86 can use AVX2 (four pointers per vector) or AVX-512 (eight, only on supported builds); ARM uses NEON (two per vector). These instructions copy the messages; they don't replace synchronization. Wider isn't always faster: measure it.
 
 ### Callback with runtime item count
 
-Callbacks often receive a runtime count: `2`, `56`, `32`, `23`, `11`, `1`, `3`,
-`67`, and so on. Split it into chunks no larger than
-`FastQueueBatch<T*>::max_size`, stage one chunk, then select its fixed width with
-a `switch`. x86/default ARM have max width 8; Apple ARM builds with 128-byte
-batches have max width 16.
+What if a callback gives you 23 pointers today and 2 tomorrow? Split them into chunks up to `FastQueueBatch<T*>::max_size`, then choose a fixed width with a `switch`. This helper waits until **each whole chunk** is sent, so it never loses a partially sent batch. It belongs in the producer thread; consumer needs its own batch and receive loop.
 
 ```cpp
 #include <algorithm>
@@ -266,51 +193,17 @@ void onJobs(FastQueue<Job*, 1023, 64>& queue, Job* const* jobs,
 }
 ```
 
-For `23`, x86/default ARM sends `8 + 8 + 7`; Apple ARM can send `16 + 7`.
-For callback counts `2, 56, 32, 23, 11, 2, 1, 1, 3, 67`, invoke same helper
-each time. `nullptr` remains valid payload; count, never null termination,
-defines chunk length. If callback cannot wait, use a one-shot variant that
-returns queued count and retain unsent input for a later callback.
+For 23 pointers, x86/default ARM sends `8 + 8 + 7`; Apple ARM sends `16 + 7`. The same helper works for any count. Default FastQueue permits `nullptr` as a message: use the **count**, not a null terminator, to know when you're done. If a callback can't wait, return the number actually queued and keep the rest for later; don't drop unsent pointers.
 
-Batch payload copy uses only contiguous ring segments. Ring wrap splits into
-prefix/suffix copies, so no copy reads or writes beyond either ring or batch.
-- x86: scalar fallback; AVX2 copies four pointers/vector (two vectors for 8);
-  AVX-512 copies 8 in one vector only when compiled with `__AVX512F__`.
-- ARM: NEON copies two pointers/vector; Apple 128-byte batches use up to eight
-  vectors for 16 pointers. Other AArch64 defaults remain 8 pointers.
+### Why not scan for empty slots?
 
-SIMD changes payload copy only. Availability remains one index-distance check;
-release/acquire index handoff remains one publication per returned batch.
+Default FastQueue already knows what's available from its cached indices. Looking for `nullptr` in payload slots would add reads and break valid null messages. Runtime-count loops and function-pointer dispatch didn't reliably beat fixed-width calls either: they can make it harder for the compiler to optimize the copy. Non-temporal stores don't suit data consumer will read right away. Those are measured choices, not a rule that another CPU can never do better.
 
-### Rejected alternatives
+Bulk benchmark numbers below are **items/s**, not calls/s. They compare widths of FastQueue2 only: Deaod, Dro, and David V5 don't have matching bulk APIs. Each run moves an exact count, checks FIFO, starts producer and consumer together, and reports median of 12 solo rounds.
 
-Batch width stays a compile-time template selected by caller-side `switch`.
-Measured runtime-count loops and function-pointer dispatch did not produce a
-repeatable peak-width win; both can prevent full copy unrolling and inlining.
-Do not infer count by scanning payload lanes for `nullptr`: FastQueue uses
-cached producer/consumer indices for occupancy, permits null 8-byte payloads,
-and a lane scan adds payload loads and compares to hot path. Non-temporal stores
-also do not fit this hand-off: consumer reads newly published ring slots soon
-after producer writes them. Keep fixed-width API unless target benchmark proves
-otherwise.
+### How I measured widths
 
-
-Bulk mode is FastQueue-only. It reports **items/s**, preserves exact FIFO
-validation, and uses fixed transfer count, joined producer/consumer workers,
-start gate, 12 solo rounds, and median result. It is not a four-queue comparison:
-Deaod, Dro, and David V5 have no matching bulk APIs.
-
-### Measurement policy
-
-Transfer count is timed pointer items per round, not queue capacity or a
-throughput limit. Short runs (for example 5M transfers) screen widths quickly;
-longer runs (for example 100M transfers) confirm selected results with less
-noise. Existing rows are not all one count: 5M/12-round sweeps screen valid widths,
-while 100M/12-round confirmations measure scalar plus selected winners. Fixed
-counts trade benchmark runtime against scheduler, frequency, and thermal noise.
-For very fast
-queues, target at least 100–500 ms per timed sample and scale transfer count to
-match expected items/s.
+Transfer count means pointer *items* per timed round, not queue capacity. Five million items gives a quick first look; 100 million is a longer check for likely winners. Results from different run lengths aren't interchangeable. If a sample is too short, scheduler noise and timer overhead can dominate; aim for roughly 100–500 ms or more per timed sample when choosing transfer count.
 
 ### Measured width sweep
 
@@ -323,19 +216,7 @@ match expected items/s.
 | Intel Xeon E5-2630L v3, Haswell, Linux x86_64 | `-march=native`, same-socket CPUs 1/3, `taskset` | 35.098 M/s | **1 pointer** | **195.356 M/s** | **+456.6%** |
 | AMD EPYC 7702P, Zen2, Linux x86_64 | `-march=native`, CPUs 1/3, `taskset` | 85.842 M/s | **2 pointers** | **212.092 M/s** | **+147.1%** |
 
-\* **Scalar mode and fixed width 1 are not like-for-like API measurements.**
-`BULK_BATCH_SIZE=0` calls scalar `tryPush`/`tryPop` through `runOne`; width 1
-calls `tryPushBatch<1>`/`tryPopBatch<1>` through bulk producer/consumer loops.
-Both move one pointer per successful operation, but their caller loops, call
-layout, retry behavior, and generated code differ. Read this table as measured
-configuration throughput, not as isolated cost of grouping one pointer.
-
-The Haswell width-1 result is especially unusual. It does **not** mean that
-"batching one pointer is generally 456.6% faster." Width 1 is a distinct
-bulk-call path, and scalar versus width-1 results vary materially by run
-profile. Keep it as result for that exact native configuration; use repeated,
-matched scalar and width-1 distributions before making a Haswell tuning
-decision.
+\* **Scalar mode and fixed width 1 aren't the same test.** `BULK_BATCH_SIZE=0` uses scalar `tryPush`/`tryPop`; width 1 uses `tryPushBatch<1>`/`tryPopBatch<1>`. They each move one pointer, but the surrounding loops and generated code differ. Don't read the Haswell +456.6% entry as “batching one pointer is always that much faster.” It's a result for that exact setup; repeat matched tests before tuning your own Haswell machine.
 
 M5 100M/12-round confirmation measured scalar `405.702 M/s`; fixed-14
 `971.983 M/s` median (raw range `947.525–990.994 M/s`); fixed-16 screening
@@ -367,13 +248,7 @@ Zen2P CPUs 1/3 are local physical cores. Fresh 5M sweep medians in M items/s:
 | Intel Xeon E5-2630L v3, Haswell, Linux x86_64 | 40.603 | **185.678** | 33.970 | 28.318 | 39.098 | 39.195 | 45.863 | 51.130 | 67.611 | 1 |
 | AMD EPYC 7702P, Zen2, Linux x86_64 | 86.354 | 89.828 | **211.461** | 202.505 | 111.040 | 103.148 | 134.803 | 135.979 | 183.596 | 2 |
 
-Values above are M items/s. Full 100M confirmation retained Cortex-X925 width
-8 `682.023`, Haswell width 1 `195.356`, and EPYC 7702P width 2 `212.092`. On
-dual-socket EPYC 7702, 5M screening chose width 2, but full 100M checks found
-width 8 `176.237` above width 2 `54.550`; table therefore reports width 8 as
-final result. Its 100M width-8 result is below 5M width-2 result, underlining
-that short sweeps screen candidates only; use long matched confirmations for
-published winner and gain.
+Values above are M items/s. Longer 100M-item checks gave Cortex-X925 width 8 `682.023`, Haswell width 1 `195.356`, and EPYC 7702P width 2 `212.092`. On dual-socket EPYC 7702, the short 5M-item run favored width 2; the longer 100M-item run favored width 8 (`176.237` vs `54.550` for width 2). That's why I don't pick a winner from a quick screening run alone.
 
 ### Reproduce before claims
 
@@ -390,31 +265,21 @@ g++ -std=c++20 -O3 -DNDEBUG -march=znver2 -pthread -I. -Ideaod_spsc -Idro \
 taskset -c 5,6 ./fastqueue-bulk2
 ```
 
-`BULK_BATCH_SIZE=0` selects scalar API. Valid batch widths are target-specific:
-`1..8` on x86 and standard 64-byte-line AArch64; `1..16` on Apple Silicon's
-128-byte-line default. Build x86 SIMD variants with `-mavx2` or `-mavx512f` only
-on supporting CPUs. SIMD modifies payload copy only; it did not make wider Zen2
-batches automatically win. Measure each width and ISA on target hardware before
-claims.
+`BULK_BATCH_SIZE=0` runs the scalar API. Valid fixed widths are 1–8 on x86 and standard ARM; 1–16 on default Apple Silicon. Only use `-mavx2` or `-mavx512f` on CPUs that support those instructions. SIMD speeds up copying pointers, not the queue's publication step. Measure widths on your own CPU before claiming a winner.
 
 
 ## Benchmark details
 
 ### Per-architecture tuning
 
-`fast_queue_arm64.h` selects an inline contiguous ring by default
-(`FQ_ARM_RING_INLINE=1`), which is measured fastest for Apple M5 pooled
-throughput. Define `FQ_ARM_RING_INLINE=0` to restore separately allocated ARM
-storage for experiments. `fast_queue_x86_64.h` selects an x86 profile from
-GCC/Clang `-march` macros:
+Want to try the knobs yourself? The default ARM ring lives inside the queue (`FQ_ARM_RING_INLINE=1`), which was fastest in the measured Apple M5 pooled test. `FQ_ARM_RING_INLINE=0` tries a separate allocation. On x86, the compiler's `-march` setting picks a profile:
 
 * `-march=znver2`: `FQ_WRAPPED_INDICES=1`, `FQ_CONSUMER_CUSHION=6`.
 * Other x86 targets: `FQ_WRAPPED_INDICES=0`, `FQ_CONSUMER_CUSHION=0`.
-* Define either macro before including header to override profile.
-* `FQ_OCCUPANCY_INSTRUMENT=1` records empty-refresh occupancy and perturbs
-  throughput; diagnosis only.
+* Define either macro before including the header if you want to test another setting.
+* `FQ_OCCUPANCY_INSTRUMENT=1` records occupancy for diagnosis but changes throughput. Don't use it for headline numbers.
 
-Fixed-work reproduction:
+To reproduce a fixed-work Linux comparison (only change governor/real-time settings if you control the host):
 
 ```bash
 g++ -O3 -DNDEBUG -std=c++20 -march=native -DPOOLED_ONLY=1 \
@@ -424,40 +289,15 @@ sudo cpupower frequency-set -g performance
 sudo chrt -f 90 ./bench
 ```
 
-## Topology matrix: producer → consumer communication
+## Topology matrix: which CPUs talk fastest?
 
-`FastQueue` performance depends on producer/consumer placement: physical core,
-SMT sibling, cache cluster, socket/NUMA boundary, CPU governor, and queue
-occupancy all affect cache-line handoff. Do not treat one two-core benchmark as
-a universal CPU ranking.
+Where you run producer and consumer matters. Two threads on the same core (SMT siblings), two cores sharing cache, and two cores on different sockets can get very different speeds. Governor, other work on the host, and how full the queue gets also matter. One two-core result isn't a ranking of the whole machine.
 
-`tools/run_topology_matrix.py` builds an opt-in benchmark and produces an
-ordered producer→consumer matrix for every logical CPU available to current
-process. It measures `Scalar API` separately, then every target-supported
-fixed width (`1..8` on x86_64/common Linux arm64; `1..16` with Apple 128-byte
-ARM batch staging). Diagonal cells are excluded: a queue needs distinct
-producer and consumer threads. CSV rows also record socket/core/SMT data where
-Linux exposes it, hard-pin success, raw rounds, and median summaries.
+Want to see the choices? `tools/run_topology_matrix.py` measures each allowed **producer → consumer** CPU pair, once with scalar API and again at every supported fixed batch width (1–8 on x86/common Linux ARM; up to 16 with Apple 128-byte batches). It skips producer == consumer: those are two distinct threads and a CPU can't be both placements for this test. Linux CSV rows record the CPU topology, whether workers were pinned, and individual rounds; summary JSON gives the median for each pair and mode.
 
-Published topology graphics are high-resolution PNG files. They use local
-reference-inspired rainbow scale: **blue = slow throughput; red = fast
-throughput**. Each image has own labeled linear M-items/s scale. Matrix rows
-are producers; columns consumers. Hatched diagonal means excluded self-pair;
-light gray means missing measurement.
+The [interactive 3D topology explorer](https://andersc.github.io/fastqueue2/topology-matrix/) is the easiest way to look around. Pick a machine and a mode, hover for a measured rate, or click a producer → consumer path to compare widths. The axes show producer CPU, consumer CPU, and mode; color shows items per second. Each plotted cell represents one measured path and mode, not an average of neighboring CPUs. Raw timed rounds are in the CSV; per-path medians and host details are in JSON. Missing paths aren't filled in with made-up numbers.
 
-3D view is rasterized static **exact-cell voxel heat cube**, not exploded plane chart:
-X = producer CPU, Y = consumer CPU, Z = scalar/fixed batch mode, color =
-throughput. Z layers always print in numeric order: `scalar`, `width 1`,
-`width 2`, … through highest supported width; unmeasured layers remain visibly
-empty. Each semi-transparent voxel is one measured directed-pair median:
-no CPU groups, no bin statistics, no aggregate medians. Transparency exposes
-cells behind front faces; subtle cell edges preserve depth. CPU tick labels thin
-only labels, never data. Exact CPU order and every rendered cell live beside
-cube in `topology-voxel-cube-coverage.json`. PNG is static; exact directed-path
-values remain in linked CSV and `summary.json`.
-
-Quick calibrated local probe—four allowed logical CPUs, per-cell work scaled from
-a calibration pass to target at least 100 ms:
+Want a quick local probe instead of the full machine? This asks for four allowed CPUs and aims for at least 100 ms of work per path:
 
 ```bash
 python3 tools/run_topology_matrix.py \
@@ -467,67 +307,29 @@ python3 tools/run_topology_matrix.py \
 
 ### Interactive topology explorer
 
-[Open interactive topology explorer](https://andersc.github.io/fastqueue2/topology-matrix/). GitHub Pages serves this static D3 viewer over HTTPS. It loads run-level summary and metadata JSON first, then shows exact directed producer → consumer → mode medians with hover values, width selection, shared/local scale selection, and same-NUMA versus cross-NUMA filtering. It never groups CPU cells or collapses direction; linked PNGs remain immutable shareable fallbacks and results CSV remains raw per-round source.
+[Open the FastQueue2 topology explorer](https://andersc.github.io/fastqueue2/topology-matrix/). Change system and width, orbit/zoom the 3D view, and inspect a path. You can choose a color scale for the selected mode or one shared across all modes. Filtering by same/cross NUMA node is useful on systems with more than one NUMA node; a single NUMA node can still have important cache-cluster boundaries. The viewer shows measured directed paths; the CSV remains the source for individual timed rounds.
 
 ### Completed full-span Linux results
 
 | System | Coverage | Artifacts |
 |---|---|---|
-| AMD EPYC 7702 (dual socket) | All 256 logical CPUs across 2 NUMA nodes; scalar plus fixed widths 1–8. One uniform campaign: 12 timed samples per directed CPU-pair/width cell, 2 warmups, 250 ms calibration target, hard Linux logical-CPU pinning, performance governor, and requested `SCHED_RR` priority 10. Exact coverage validated: 587,520 medians from 7,050,240 raw rows, with no missing, unexpected, self-pair, or unpinned rows. | [Topology Explorer](https://andersc.github.io/fastqueue2/topology-matrix/) · [scalar heatmap](docs/topology-matrix/linux-runs/fq-topology-f131-20260719-182926/scalar-heatmap.png) · [fixed-8 heatmap](docs/topology-matrix/linux-runs/fq-topology-f131-20260719-182926/fixed-8-heatmap.png) · [3D topology heat cube](docs/topology-matrix/linux-runs/fq-topology-f131-20260719-182926/topology-voxel-cube.png) · [raw CSV (gzip)](docs/topology-matrix/linux-runs/fq-topology-f131-20260719-182926/results.csv.gz) · [median summary](docs/topology-matrix/linux-runs/fq-topology-f131-20260719-182926/summary.json) |
-| Intel Xeon E5-2630L v3 | All 32 logical CPUs; scalar plus fixed widths 1–8. One uniform isolated campaign: 12 timed samples per directed CPU-pair/width cell, 2 warmups, 500 ms minimum sample, hard Linux logical-CPU pinning, performance governor, and `SCHED_RR` priority 10. | [Topology Explorer](https://andersc.github.io/fastqueue2/topology-matrix/) · [scalar heatmap](docs/topology-matrix/linux-runs/fq-topology-f061-20260727-215424/scalar-heatmap.png) · [fixed-8 heatmap](docs/topology-matrix/linux-runs/fq-topology-f061-20260727-215424/fixed-8-heatmap.png) · [3D topology heat cube](docs/topology-matrix/linux-runs/fq-topology-f061-20260727-215424/topology-voxel-cube.png) · [raw CSV](docs/topology-matrix/linux-runs/fq-topology-f061-20260727-215424/results.csv) · [median summary](docs/topology-matrix/linux-runs/fq-topology-f061-20260727-215424/summary.json) |
-| AMD EPYC 7702P | All 128 logical CPUs; scalar plus fixed widths 1–8. One uniform isolated campaign: 12 timed samples per directed CPU-pair/width cell, 2 warmups, 250 ms minimum sample, hard Linux logical-CPU pinning. | [Topology Explorer](https://andersc.github.io/fastqueue2/topology-matrix/) · [scalar heatmap](docs/topology-matrix/linux-runs/fq-topology-f177-20260727-213450/scalar-heatmap.png) · [fixed-8 heatmap](docs/topology-matrix/linux-runs/fq-topology-f177-20260727-213450/fixed-8-heatmap.png) · [3D topology heat cube](docs/topology-matrix/linux-runs/fq-topology-f177-20260727-213450/topology-voxel-cube.png) · [raw CSV](docs/topology-matrix/linux-runs/fq-topology-f177-20260727-213450/results.csv) · [median summary](docs/topology-matrix/linux-runs/fq-topology-f177-20260727-213450/summary.json) |
+| AMD EPYC 7702 (dual socket) | All 256 logical CPUs across 2 NUMA nodes; scalar and widths 1–8. 12 timed rounds and 2 warmups per path/mode; 587,520 exact medians from 7,050,240 timed rows, no missing pairs. Hard pinning, performance governor, requested `SCHED_RR` priority 10. The 250 ms calibration **target was not enforced**: many samples were shorter, and this dataset is noisy. Treat individual path rankings with caution while a replacement is investigated. | [Raw CSV (gzip)](docs/topology-matrix/linux-runs/fq-topology-f131-20260719-182926/results.csv.gz) · [Medians](docs/topology-matrix/linux-runs/fq-topology-f131-20260719-182926/summary.json) · [Metadata](docs/topology-matrix/linux-runs/fq-topology-f131-20260719-182926/metadata.json) |
+| Intel Xeon E5-2630L v3 | All 32 logical CPUs; scalar and widths 1–8. One uniform 12-round run with 2 warmups and 500 ms target, hard pinning, performance governor, `SCHED_RR` priority 10. | [Raw CSV](docs/topology-matrix/linux-runs/fq-topology-f061-20260727-215424/results.csv) · [Medians](docs/topology-matrix/linux-runs/fq-topology-f061-20260727-215424/summary.json) · [Metadata](docs/topology-matrix/linux-runs/fq-topology-f061-20260727-215424/metadata.json) |
+| AMD EPYC 7702P | All 128 logical CPUs; scalar and widths 1–8. One uniform 12-round run with 2 warmups and 250 ms target, hard pinning. Host activity can affect close per-path rankings. | [Raw CSV](docs/topology-matrix/linux-runs/fq-topology-f177-20260727-213450/results.csv) · [Medians](docs/topology-matrix/linux-runs/fq-topology-f177-20260727-213450/summary.json) · [Metadata](docs/topology-matrix/linux-runs/fq-topology-f177-20260727-213450/metadata.json) |
 
 Explorer exposes one canonical dataset per system. It renders each exact measured cell; no CPU values are averaged, inferred, or smoothed. Dataset provenance lives in linked metadata, not Explorer controls.
 
-### Matrix count and reliability tradeoff
+### How big is a matrix?
 
-A 32-CPU matrix uses ordered non-self pairs: `32 × 31 = 992`, not `32 × 32`.
-`producer → consumer` and `consumer → producer` are separate measurements;
-`producer == consumer` is deliberately excluded. With scalar plus fixed widths
-1–8, there are nine modes, so the matrix has `992 × 9 = 8,928` measured
-pair×mode cells.
+With 32 CPUs there are `32 × 31 = 992` directed paths: CPU 1 → CPU 2 and CPU 2 → CPU 1 count separately, and no CPU sends to itself. Scalar plus fixed widths 1–8 gives nine modes. That's `992 × 9 = 8,928` path/mode results. Five timed rounds write `8,928 × 5 = 44,640` CSV rows; twelve rounds write `107,136`. The published 32-CPU Xeon run uses **twelve**. Warmups run before timing but don't appear as CSV rows or affect the median.
 
-Configured with five timed rounds, it writes `8,928 × 5 = 44,640` CSV data
-rows. This is the correct count for the published 32-CPU all-width archive.
-`32 × 32 × 9 × 5 = 46,080` would wrongly include 1,440 self-pair rows.
-`46,095` is not a valid count. `107,136` is also not a valid count for this
-five-round configuration; it was an erroneous progress report from a later
-12-round launch. Twelve rounds would produce `8,928 × 12 = 107,136` timed CSV
-rows, not five rounds.
+More rounds help with brief interruptions, but also take longer: twelve cost 2.4 times as much as five. They can't remove IRQs, other software, frequency changes, or heat. An old calibration *target* wasn't a guarantee that every timed round lasted that long. That's what went wrong with the original f131 run: nearly half its timed rows fell below its 250 ms target. Don't read its fine-grained rankings as precise results.
 
-One warmup, when enabled, adds `8,928` executions but no CSV rows and no
-median inputs. Warmups prime code/data paths before timing; they are not
-recorded measurements.
+Each archive includes raw rounds and information about the host. On Linux, we use the CPU's NUMA node to mark boundaries in the view. CPU IDs don't have to be consecutive. If NUMA information isn't available, physical package is labeled as a fallback; if neither is available, we don't claim a boundary. A machine can have one NUMA node and still have separate L3 cache clusters.
 
-Five timed samples and their median reduce impact from transient scheduler
-preemption, frequency changes, and IRQ bursts. Calibrating every sample to a
-minimum duration improves stability because fixed timing overhead becomes a
-smaller share of each rate. More rounds improve confidence but multiply serial
-runtime exactly: 12 rounds cost 2.4× five rounds. They do not create full
-isolation: IRQs, kernel work, SMT contention, turbo behavior, and thermal or
-power drift remain possible.
+Full matrices can take days. For 128 selected CPUs and nine modes, there are `128 × 127 × 9 = 146,304` paths/modes. At five rounds plus one warmup, that's 877,824 runs. Start smaller: try SMT siblings, cores sharing cache, different cache clusters, then cross-NUMA paths.
 
-Each archive stores raw measurements plus host metadata. On Linux, metadata records
-NUMA-node membership for allowed CPUs from `sysfs`; renderer maps boundaries by displayed
-CPU order, so sparse/non-contiguous CPU IDs remain correct. Heatmaps draw dashed horizontal
-and vertical boundaries whenever more than one NUMA node appears. Same-domain quadrants lie
-on corresponding diagonal blocks; off-diagonal quadrants cross NUMA interconnect. Voxel cubes
-mark same boundaries on base plane and store them in coverage JSON. If NUMA sysfs is absent,
-physical-package membership is recorded and labelled as fallback; no topology boundary is
-claimed when neither source exists. Existing archives gain marks only after re-rendering from
-metadata containing topology data.
-
-Full matrices grow quickly: `ordered_pairs × (1 + fixed_widths) ×
-(warmups + rounds)`. A 128-selected-CPU / eight-wide system has `128 × 127 ×
-9 = 145,152` pair×mode cells. At five rounds plus one warmup that is 870,912
-executions. With calibrated 100M-transfer cells, serial work is roughly 87
-trillion transfers—days, not minutes. Start with topology classes: SMT sibling,
-same cache cluster, different cache cluster in socket, then cross-NUMA.
-
-Shard exhaustive producer rows across independent identical SSH hosts. Shards
-are disjoint by producer-row index and can merge by concatenating their CSVs
-only when CPU selection, binary, calibration settings, and host topology are
-identical:
+If you have **identical, otherwise idle hosts**, you can split producer rows across them. Only combine CSVs when CPU selection, binary, settings, and topology match. Don't mix unrelated machines:
 
 ```bash
 # Host 0 of 8
@@ -540,19 +342,11 @@ python3 tools/run_topology_matrix.py --max-cpus 128 --transfers 720720 \
 cat /tmp/fq-shard-*/results.csv | { head -n 1; grep -hv '^producer_cpu,'; } > merged-results.csv
 ```
 
-Use a transfer count divisible by every fixed width: `840` minimum for an
-8-wide target, `720720` minimum for a 16-wide target.
+Use a transfer count divisible by every fixed width: `840` works for widths 1–8; `720720` works for widths 1–16.
 
-### Detached multi-host Linux runs
+### Running on Linux hosts
 
-`tools/remote_topology.py` stages exact current source as a tarball, builds it
-on each named host, then launches benchmark via remote `nohup`. Jobs survive
-local SSH disconnects and local-machine reboot. They do not survive remote host
-reboot. Each launch creates unique `/tmp/fq-topology-<host>-<timestamp>/` paths
-containing `run.pid`, `command.txt`, `launch.json`, `run.log`, source, build,
-and artifacts. Never reuse a completed remote job directory, because benchmark
-CSV opens with truncation. Default width selection is empty, meaning every
-width supported by target binary: scalar plus widths 1 through target maximum.
+`tools/remote_topology.py` copies current source, builds it on each host, then starts a detached `nohup` job. It keeps running if SSH disconnects or your local computer reboots; it won't survive a reboot of the remote host. Each launch gets a new `/tmp/fq-topology-<host>-<timestamp>/` directory with logs, PID, settings, build, and results. **Don't reuse a run directory**: the benchmark truncates its CSV at startup. By default it tests scalar plus all supported fixed widths.
 
 ```bash
 # Launch fresh full-width topology runs: scalar plus every target-supported fixed width.
@@ -566,115 +360,47 @@ python3 tools/remote_topology.py status --hosts <configured-hosts>
 python3 tools/remote_topology.py harvest --hosts <configured-hosts>
 ```
 
-Host matrices are independent: never merge CSVs from different CPU models or
-topologies. `launch.json` records SSH target, exact source revision, UTC launch
-time, and benchmark arguments. Harvest does not copy a running or incomplete
-result. Validate each harvested `results.csv` for expected pair/mode/round
-coverage and `pinned=1` before publishing links.
+Don't merge results from different CPU models or topologies. `launch.json` records host, source revision, launch time, and arguments. Harvest only finished runs; before publishing, check that every expected CPU pair, width, and round is present, workers really ran on requested CPUs, and all rates are valid. `--widths 0,8` makes a smaller probe; leaving widths out requests all supported modes.
 
-A target width is publishable only when every producer→consumer pair and timed
-round has `pinned=1` and finite positive rate. Empty Z layers mean no valid
-measurement exists; renderer never fabricates throughput. To request restricted
-modes for a quick probe, pass `--widths 0,8`; default launcher mode is full
-supported-width coverage.
-
-Artifacts land in `docs/topology-matrix/`:
+The important files in each run are:
 
 ```text
-results.csv                       raw per-round directed-pair data
-summary.json                      deterministic per-cell medians and samples
-metadata.json                     OS/CPU/placement/benchmark settings
-scalar-heatmap.png                raster producer-row → consumer-column matrix
-fixed-*-heatmap.png               raster largest supported fixed-width matrix
-width-depth.png                   raster median/min–max batch-mode comparison
-topology-voxel-cube.png           rasterized 3D producer-bin × consumer-bin × mode cube
-topology-voxel-cube-coverage.json exact display-bin membership and voxel coverage/statistics
+results.csv      every timed producer → consumer sample
+summary.json     median and sample count for each path and mode
+metadata.json    machine and benchmark settings
 ```
 
-Linux uses `sched_getaffinity` and only tests CPUs allowed by cpuset/container
-policy; each worker calls `pthread_setaffinity_np`, and `pinned=1` in CSV means
-both calls succeeded. CPU IDs can be sparse. Socket/core/SMT labels come from
-Linux sysfs, not guessed numbering. macOS has no public hard logical-CPU
-pinning equivalent; runner records advisory placement confidence and matrix
-rows report pin failure rather than pretending placement is exact. Result is
-still useful as a scheduling-sensitive workload graph, not proof of a physical
-core-to-core path. Existing queue backends support x86_64 and arm64 only.
-New CPU *models* in those architectures need no LLM onboarding—the runner
-probes topology and compiles native code. A genuinely new ISA needs queue
-backend, correctness tests, and performance work before benchmark support.
+Rendered images are optional presentation artifacts; use the interactive Explorer for navigation and raw CSV for exact rounds.
 
-Measured Linux **smoke probe**: dual-socket AMD EPYC 7702, Linux x86_64. This
-is real hard-pinned FIFO-validated data but not stable enough for topology
-claims: it covers CPUs `0..3` only and used 2,162,160 transfers/sample, which
-can be only a few milliseconds for fixed width 8. It remains a functional
-artifact, not benchmark evidence. Run calibrated samples as above before
-publishing pair-level conclusions.
+On Linux, the runner uses CPUs allowed by the OS/container, pins each worker with `pthread_setaffinity_np`, and records `pinned=1` when both calls succeed. CPU numbers can have gaps. Socket, core, and SMT information comes from Linux rather than guessed CPU numbers. macOS has only affinity hints, not hard logical-CPU pinning; don't mistake its placement results for exact core-to-core paths. x86_64 and arm64 CPU models can use the current backends; a new instruction-set architecture would need a new backend and tests.
 
-Explore measured producer → consumer paths, scalar mode, and fixed batch widths
-`1..8` in the interactive 3D viewer:
-
-- [FastQueue2 topology explorer](https://andersc.github.io/fastqueue2/topology-matrix/)
-
-Exact provenance downloads remain available for independent analysis:
-
-- [Raw results CSV](docs/topology-matrix/amd-epyc-7702-dual/results.csv)
-- [Median summary JSON](docs/topology-matrix/amd-epyc-7702-dual/summary.json)
-- [Run metadata](docs/topology-matrix/amd-epyc-7702-dual/metadata.json)
+An older four-CPU EPYC 7702 smoke probe tested basic operation, not reliable pair-by-pair performance: some fixed-width samples lasted only milliseconds. For measured paths use the [FastQueue2 topology explorer](https://andersc.github.io/fastqueue2/topology-matrix/) and the raw CSV/JSON links in the system table above, keeping its f131 noise warning in mind.
 
 ## Build and run the tests
 
-```
+Want to check the queue on your own CPU?
+
+```bash
 git clone https://github.com/andersc/fastqueue2.git
 cd fastqueue2
-mkdir build
-cd build
-cmake -DCMAKE_BUILD_TYPE=Release ..
-cmake --build .
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build
+ctest --test-dir build --output-on-failure
+./build/fast_queue2               # scalar comparison with Deaod, Dro, David V5
+./build/fast_queue_integrity_test # FIFO and data checks
 ```
 
-(Run the benchmark against Deaod and Dro)
-
-**./fast_queue2**
-
-(Run bulk API tests)
-
-**ctest --output-on-failure**
-
-(Run the integrity test)
-
-**./fast_queue_integrity_test**
+These run the default queue. The EPYC experiment is opt-in, not part of this ordinary build.
 
 
 ## Some thoughts
-There are a couple of findings that puzzled me.
 
-1.	Cache-line separation is not one-size-fits-all, but on both families the
-	right answer is "keep the two hot index lines out of each other's prefetch
-	window". x86's L2 spatial prefetcher pulls **128-byte (two-line) pairs**, so
-	the write index and read index must live in different 128-byte pairs — 128-byte
-	separation measured ~18% faster than 64 on AMD Zen (with 64, fetching one index
-	dragged the other core's index line along). On ARM (Apple M-series *and*
-	Cortex-X925) the streaming prefetcher reaches even further and **256-byte**
-	separation was best. So the alignment is set per-architecture in the two headers.
-2.	On Apple M5, queue-owned inline contiguous ring storage measured fastest in the
-	pooled benchmark. `FQ_ARM_RING_INLINE=1` is therefore default; define it as `0`
-	to test separately allocated ARM storage.
-3.	Memory ordering is not free and not uniform: making the slot itself an
-	`std::atomic` with acquire/release (LDAR/STLR per access) was ~2.6x *slower* on
-	Apple silicon than plain loads/stores ordered by one release/acquire pair on the
-	index.
-4.	Micro-benchmarks lie. The order you run competitors in, whether you malloc per
-	message, and how warm the machine is all swing the numbers more than the code
-	does. The benchmark here rotates order and reports medians for that reason —
-	the results should still be 'considered with a grain of salt'.
-5.	**macOS and Linux expose different measurement controls.** On macOS,
-	`thread_policy_set` with `THREAD_AFFINITY_POLICY` is an affinity tag, not hard
-	core pinning; scheduler placement between P- and E-cores can change results.
-	Run several rounds and use medians. On Linux, `pthread_setaffinity_np`, a
-	performance governor, and `chrt` can constrain placement, frequency policy,
-	and scheduling policy; results still depend on CPU model, thermals, and system
-	load. These controls affect measurement repeatability, not correctness.
+A few things surprised me while measuring:
 
-Each benchmark row reports its own setup. Compare queues within a row; do not use
-absolute M/s values to compare different machines or operating systems.
+1. **Moving two counters farther apart helped.** On tested x86 CPUs, separating the hot read and write indices by 128 bytes was about 18% faster than 64 bytes on AMD Zen. One likely reason is that the CPU fetches neighboring cache lines together. On tested ARM machines, 256-byte separation worked best. The headers use different alignments for that reason; don't assume these distances win on every CPU.
+2. **Where the ARM ring lives matters.** On Apple M5, putting the ring inside the queue was fastest in the pooled test. That's the default (`FQ_ARM_RING_INLINE=1`); `0` tries separate allocation.
+3. **An atomic operation for every item isn't free.** On Apple Silicon, making every slot atomic with acquire/release was about 2.6× slower in that experiment than publishing through an index. That's why the default ARM queue doesn't copy the EPYC slot approach.
+4. **Benchmarks can fool us.** Allocation, competitor order, machine load, and heat change the result. We rotate order and report medians, but it's still a microbenchmark. On macOS, an affinity tag doesn't pin a thread to a specific CPU; on Linux, pinning, a performance governor, and `chrt` can improve repeatability but can't make other work disappear. These controls affect the measurement, not queue correctness.
+
+Please compare queues within the same benchmark row, then measure your own workload. Can this be beaten? Probably. I'd rather find out than declare a universal winner.
 
